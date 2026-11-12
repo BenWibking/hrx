@@ -40,7 +40,7 @@ bool unit_has_error(const loom_cxx_unit_t* unit);
 struct UnitStatistics {
   // Completed loom_cxx_import_unit() calls on the unit.
   uint64_t import_count = 0;
-  // Launched kernels dropped by the most recent import (DROP_FAILED_KERNELS).
+  // Kernel roots dropped by the most recent import (DROP_FAILED_KERNELS).
   uint64_t dropped_kernel_count = 0;
 };
 UnitStatistics unit_statistics(const loom_cxx_unit_t* unit);

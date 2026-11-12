@@ -233,11 +233,11 @@ class Functions {
   // Discovery order grows as declare reaches helpers. Spans are invalidated by
   // growth; consumers obtain the next indexed entry after each body finishes.
   std::span<const FunctionInstance> pending() const { return pending_; }
-  // Launched kernel whose translation first reached pending()[index].
+  // Kernel root whose translation first reached pending()[index].
   cxx::FunctionSymbol* pending_origin(size_t index) const {
     return index < pending_origins_.size() ? pending_origins_[index] : nullptr;
   }
-  // Attributes subsequently declared definitions to a launched kernel root.
+  // Attributes subsequently declared definitions to a kernel root.
   void set_current_origin(cxx::FunctionSymbol* origin) {
     current_origin_ = origin;
   }
@@ -249,7 +249,7 @@ class Functions {
   bool hosted() const {
     return options_ && (options_->flags & LOOM_CXX_IMPORT_FLAG_HOSTED);
   }
-  // Launched kernels omitted from @launched selection after failing to lower.
+  // kernel_ref roots omitted from selection after failing to lower.
   void set_excluded_kernels(
       const std::unordered_set<cxx::FunctionSymbol*>* excluded) {
     excluded_kernels_ = excluded;
@@ -312,17 +312,18 @@ class Functions {
   void collect(cxx::DeclarationAST* declaration, DeclarationScope scope,
                std::vector<cxx::FunctionSymbol*>& definitions);
   const std::string& qualified_name(cxx::FunctionSymbol* symbol);
-  // Walks host bodies reachable from the translation unit's concrete
-  // definitions (outside the standard library) and returns every kernel named
-  // by a launch-style call's leading template argument or by an odr-use of
-  // loom::kernel::kernel_ref<&K>, recording the latter in kernel_references_.
-  // Bodies are completed for instantiation but never lowered.
-  std::vector<cxx::FunctionSymbol*> discover_launched_kernels(
-      std::span<cxx::FunctionSymbol* const> definitions);
-  // Export name of a launched kernel root (a kernel named by a launch site or
-  // a kernel_ref odr-use): its explicit loom::symbol name, else its Itanium
-  // symbol. Empty for any other function (the ordinary naming rules apply).
-  std::string launched_export_name(cxx::FunctionSymbol* kernel);
+  // Returns the kernels K named by the loom::kernel::kernel_ref<&K>
+  // specializations whose linkage names are |names|, in order and without
+  // duplicates, recording each reference in kernel_references_. The
+  // specializations are those frontend semantic analysis instantiated for the
+  // host code; no function body is walked. Rejects a name that is not such a
+  // specialization, at |owner|.
+  std::vector<cxx::FunctionSymbol*> kernel_ref_kernels(
+      std::span<const iree_string_view_t> names, cxx::AST* owner);
+  // Export name of a kernel_ref root: its explicit loom::symbol name, else its
+  // Itanium symbol. Empty for any other function (the ordinary naming rules
+  // apply).
+  std::string kernel_root_export_name(cxx::FunctionSymbol* kernel);
   // Records a kernel_ref-named kernel's host launch descriptor: its export
   // name, static workgroup size and kernel argument leaves, from the same
   // flattening that builds the kernel's argument list.
@@ -438,7 +439,7 @@ class Functions {
       callees_;
   // Reachable worklist in deterministic discovery order.
   std::vector<FunctionInstance> pending_;
-  // Launched kernel root attributed to each pending_ entry.
+  // Kernel root attributed to each pending_ entry.
   std::vector<cxx::FunctionSymbol*> pending_origins_;
   cxx::FunctionSymbol* current_origin_ = nullptr;
   const std::unordered_set<cxx::FunctionSymbol*>* excluded_kernels_ = nullptr;
@@ -462,12 +463,12 @@ class Functions {
     uint32_t parameter_count;
     std::vector<KernelLaunchLeaf> leaves;
   };
-  // kernel_ref odr-uses in discovery order.
+  // kernel_ref roots in request order.
   std::vector<KernelReference> kernel_references_;
   // Canonical kernels named by at least one kernel_ref.
   std::unordered_set<cxx::FunctionSymbol*> referenced_kernels_;
-  // Canonical kernels named by a launch site or a kernel_ref (@launched).
-  std::unordered_set<cxx::FunctionSymbol*> launched_kernels_;
+  // Canonical kernels exported as kernel_ref roots.
+  std::unordered_set<cxx::FunctionSymbol*> kernel_roots_;
   // Descriptors of the translated kernel_ref-named kernels, by canonical
   // kernel.
   std::unordered_map<cxx::FunctionSymbol*, KernelDescriptor>

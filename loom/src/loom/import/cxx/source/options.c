@@ -53,9 +53,14 @@ iree_status_t loom_cxx_import_options_validate(
       (!options->defines && options->define_count) ||
       (!options->undefines && options->undefine_count) ||
       (!options->roots && options->root_count) ||
+      (!options->kernel_refs && options->kernel_ref_count) ||
       (!options->excluded_kernels && options->excluded_kernel_count)) {
     return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
                             "nonempty import option arrays require storage");
+  }
+  if (options->root_count && options->kernel_ref_count) {
+    return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                            "kernel_ref roots replace source function roots");
   }
   return iree_ok_status();
 }

@@ -99,7 +99,7 @@ iree_status_t import_parsed(loom_cxx_unit_t* unit, iree_string_view_t filename,
   Source& parsed = *unit->source;
   unit->statistics.dropped_kernel_count = 0;
   unit->kernel_launches.clear();
-  // A launched kernel whose lowering is rejected is dropped and the unit
+  // A kernel root whose lowering is rejected is dropped and the unit
   // retranslated without it, so one unsupported kernel does not discard
   // every other kernel's device code.
   const bool drop_failed =

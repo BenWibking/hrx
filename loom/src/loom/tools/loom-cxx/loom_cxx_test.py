@@ -481,7 +481,7 @@ const loom::kernel::descriptor* bad() {
         # Without the drop policy the unsupported kernel fails the compile.
         self.compile(source, expect_success=False)
         elf, stderr, _ = self.compile(source, "--loom-drop-failed-kernels")
-        self.assertIn("dropped 1 launched kernel(s)", stderr)
+        self.assertIn("dropped 1 kernel(s)", stderr)
         self.assertIn("  dropped: ", stderr)
         self.assertIn("preprocess=1 parse=1", stderr)
         self.assertNoExportedKernelRefs(elf)
@@ -924,46 +924,20 @@ extern "C" reference via_{name}() {{ return &shared_ref; }}
                 self.assertEqual(a[:4], ["_Z3runI6SharedEvT_", "0", "0", "-1"])
                 self.assertEqual(b, ["_Z3runI6SharedEvT_", "1", size, "0"])
 
-    def test_host_object_does_not_depend_on_import_order(self):
+    def test_range_for_unit_compiles_in_one_pass(self):
         # The importer translates range-based for statements without changing
-        # the unit's AST, so running it before host code generation (as the
-        # hidden --loom-import-first option does) gives the same object. -O0
+        # the unit's AST, which host code generation has already read. -O0
         # keeps host code close to the AST it was generated from.
-        objects = []
-        for extra in ((), ("--loom-import-first",)):
-            elf, stderr, _ = self.compile(RANGE_FOR_SOURCE, "-O0", *extra)
-            self.assertIn("preprocess=1 parse=1", stderr)
-            self.assertIn("host_codegen=1 imports=1 device_compiles=1", stderr)
-            objects.append(elf)
-        host_first, import_first = objects
-        symbols = host_first.symbols()
+        elf, stderr, _ = self.compile(RANGE_FOR_SOURCE, "-O0")
+        self.assertIn("preprocess=1 parse=1", stderr)
+        self.assertIn("host_codegen=1 imports=1 device_compiles=1", stderr)
+        symbols = elf.symbols()
         for symbol in ("_Z5totalPKf", "_Z10host_totalPKf"):
             self.assertEqual(symbols[symbol][:2], (STB_GLOBAL, STT_FUNC))
             self.assertNotEqual(symbols[symbol][2], SHN_UNDEF)
         # Descriptors are local to the object that defines them.
         self.assertEqual(symbols[RANGES_REF][:2], (STB_LOCAL, STT_OBJECT))
-        self.assertTrue(self.device_code_objects(host_first))
-
-        # The same symbols (other than the source file's, whose temporary path
-        # differs) and the same bytes in every section but the symbol tables.
-        def named(elf):
-            return {
-                name: value
-                for name, value in elf.symbols().items()
-                if value[1] != STT_FILE
-            }
-
-        def sections(elf):
-            return [
-                (name, elf.contents(section))
-                for name, section in zip(elf.names, elf.sections)
-                if name not in (".symtab", ".strtab")
-            ]
-
-        self.assertEqual(named(host_first), named(import_first))
-        text = [data for name, data in sections(host_first) if name.startswith(".text")]
-        self.assertTrue(any(text))
-        self.assertEqual(sections(host_first), sections(import_first))
+        self.assertTrue(self.device_code_objects(elf))
 
     def test_host_errors_are_compile_errors(self):
         _, stderr, _ = self.compile(

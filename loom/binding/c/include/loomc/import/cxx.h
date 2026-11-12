@@ -54,7 +54,7 @@ typedef enum loomc_cxx_import_flag_bits_e {
   /// host storage and are skipped, and helpers declaring workgroup storage
   /// become required-inline.
   LOOMC_CXX_IMPORT_FLAG_HOSTED = 1u << 1,
-  /// Drop launched kernels whose lowering is rejected instead of rejecting the
+  /// Drop kernel roots whose lowering is rejected instead of rejecting the
   /// whole translation unit.
   LOOMC_CXX_IMPORT_FLAG_DROP_FAILED_KERNELS = 1u << 2,
 } loomc_cxx_import_flag_bits_t;
@@ -190,7 +190,13 @@ typedef struct loomc_cxx_import_options_t {
   /// Optional immutable preamble borrowed until import returns. An exact source
   /// prefix or frontend-configuration mismatch uses ordinary cold parsing.
   const loomc_cxx_preamble_t* preamble;
-  /// Launched kernel export names omitted from launched-root selection.
+  /// Linkage names of loom::kernel::kernel_ref<&K> specializations, as host
+  /// code generation emits them. When nonempty, the import exports exactly
+  /// their kernels K, and |roots| must be empty.
+  const loomc_string_view_t* kernel_refs;
+  /// Number of kernel_ref roots.
+  loomc_host_size_t kernel_ref_count;
+  /// Export names of kernel_ref roots omitted from selection.
   const loomc_string_view_t* excluded_kernels;
   /// Number of excluded kernel export names.
   loomc_host_size_t excluded_kernel_count;

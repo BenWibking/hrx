@@ -17,7 +17,7 @@ namespace loom::cxx_import {
 // Unwinds AST translation after its source diagnostic has been delivered.
 struct SourceRejected {};
 
-// Unwinds translation of one launched kernel whose lowering was rejected while
+// Unwinds translation of one kernel root whose lowering was rejected while
 // LOOM_CXX_IMPORT_FLAG_DROP_FAILED_KERNELS is set; the importer retries
 // without it.
 struct KernelRejected {

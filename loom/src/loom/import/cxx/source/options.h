@@ -40,7 +40,7 @@ typedef enum loom_cxx_import_flag_bits_e {
   // are host storage and are skipped, and helpers declaring workgroup storage
   // become required-inline.
   LOOM_CXX_IMPORT_FLAG_HOSTED = 1u << 1,
-  // Drop a launched kernel whose lowering is rejected and retranslate the unit
+  // Drop a kernel root whose lowering is rejected and retranslate the unit
   // without it, instead of rejecting the whole translation unit.
   LOOM_CXX_IMPORT_FLAG_DROP_FAILED_KERNELS = 1u << 2,
   LOOM_CXX_IMPORT_FLAG_ALL = (1u << 3) - 1,
@@ -136,8 +136,14 @@ typedef struct loom_cxx_import_options_t {
   // Optional immutable frontend preamble borrowed for the import duration.
   // Source or frontend-configuration mismatches use ordinary cold parsing.
   const loom_cxx_preamble_t* preamble;
-  // Launched kernel export names omitted from launched-root selection
-  // (roots = {"@launched"}), such as kernels a later compile rejected.
+  // Linkage names of loom::kernel::kernel_ref<&K> specializations, as host
+  // code generation emits them. When nonempty, the import exports exactly
+  // their kernels K (and no |roots|) and reports their launch facts.
+  const iree_string_view_t* kernel_refs;
+  // Number of kernel_ref roots.
+  iree_host_size_t kernel_ref_count;
+  // Export names of kernel_ref roots omitted from selection, such as kernels a
+  // later compile rejected.
   const iree_string_view_t* excluded_kernels;
   // Number of excluded kernel export names.
   iree_host_size_t excluded_kernel_count;

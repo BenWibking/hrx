@@ -12,14 +12,12 @@
 // consume that one translation unit:
 //
 //   1. Host: cxx's MLIR/LLVM pipeline lowers the unit to optimized LLVM IR.
-//      The order of host code generation and import does not matter: the
-//      importer only reads the unit's AST (it may complete template
-//      instantiations through cxx, as host code generation does) and keeps
-//      its range-for expansions outside the AST. Host code runs first so a
-//      unit that references no kernel descriptors needs no device pass. The
-//      hidden --loom-import-first test option runs the device pass first.
+//      Host code runs first: the kernel_ref descriptors it references are the
+//      device pass's roots, and a unit that references none needs no device
+//      pass. The importer only reads the unit's AST (it keeps its range-for
+//      expansions outside it), so the host code is unaffected by the import.
 //   2. Device: if host code references loom::kernel::kernel_ref descriptors,
-//      Loom's importer translates the launched kernels of the same unit, and
+//      Loom's importer translates the kernels its host code references, and
 //      the Loom compiler compiles them for --loom-target. Kernels the importer
 //      or the device compiler rejects are dropped when the drop policy allows,
 //      and the unit is translated again without them (it is not reparsed).
@@ -141,9 +139,6 @@ struct Options {
   bool drop_failed_kernels = false;
   bool stats = false;
   bool verbose = false;
-  // Test option: run the device pass before host code generation, to check
-  // that the order does not change the object.
-  bool import_first = false;
   std::string keep_directory;
   std::vector<std::string> ignored;
 };
@@ -161,7 +156,7 @@ void print_help() {
       "Usage: loom-cxx [options] -c source.cpp -o object.o\n"
       "\n"
       "Parses the hosted C++ source once, generates host code from it with\n"
-      "cxx's MLIR/LLVM pipeline, imports its launched kernels with Loom's\n"
+      "cxx's MLIR/LLVM pipeline, imports the kernels it references with Loom's\n"
       "C++ importer, compiles them for the device target and emits one host\n"
       "object that embeds the device code and defines the kernel descriptors.\n"
       "\n"
@@ -185,7 +180,7 @@ void print_help() {
       "  --loom-format=FORMAT\n"
       "      device artifact format (default amdgpu-hsaco for amdgpu)\n"
       "  --loom-drop-failed-kernels\n"
-      "      drop launched kernels that the importer or the device compiler\n"
+      "      drop kernels that the importer or the device compiler\n"
       "      rejects and keep the rest; their descriptors stay unavailable\n"
       "  --loom-stats\n"
       "      report parse counts and phase times\n"
@@ -309,8 +304,6 @@ Options parse_options(int argc, char** argv) {
       options.stats = true;
     } else if (arg == "--loom-verbose") {
       options.verbose = true;
-    } else if (arg == "--loom-import-first") {
-      options.import_first = true;
     } else if (starts_with(arg, "--loom-keep=")) {
       options.keep_directory = std::string(arg.substr(12));
     } else if (arg == "-Xclang") {
@@ -1051,7 +1044,12 @@ void Driver::device_failure(std::string_view stage, std::string_view log) {
 bool Driver::import_device_module(std::vector<std::string>& excluded, int round,
                                   std::string& bytecode, bool& has_kernels) {
   auto start = Clock::now();
-  const loomc_string_view_t roots[] = {loomc_make_cstring_view("@launched")};
+  // The kernels to import are exactly those whose descriptors the host code
+  // references.
+  std::vector<loomc_string_view_t> kernel_refs;
+  for (const auto& symbol : kernel_refs_) {
+    kernel_refs.push_back(loomc_make_cstring_view(symbol.c_str()));
+  }
   std::vector<loomc_string_view_t> excluded_views;
   for (const auto& name : excluded) {
     excluded_views.push_back(loomc_make_cstring_view(name.c_str()));
@@ -1060,8 +1058,8 @@ bool Driver::import_device_module(std::vector<std::string>& excluded, int round,
   if (options_.drop_failed_kernels) {
     options.flags |= LOOMC_CXX_IMPORT_FLAG_DROP_FAILED_KERNELS;
   }
-  options.roots = roots;
-  options.root_count = 1;
+  options.kernel_refs = kernel_refs.data();
+  options.kernel_ref_count = kernel_refs.size();
   options.excluded_kernels = excluded_views.data();
   options.excluded_kernel_count = excluded_views.size();
 
@@ -1083,7 +1081,7 @@ bool Driver::import_device_module(std::vector<std::string>& excluded, int round,
 
   const auto statistics = loom::cxx_import::unit_statistics(native_unit);
   if (succeeded && statistics.dropped_kernel_count > 0 && round == 1) {
-    std::fprintf(stderr, "%s: dropped %llu launched kernel(s) in %s\n",
+    std::fprintf(stderr, "%s: dropped %llu kernel(s) in %s\n",
                  kTool.data(),
                  (unsigned long long)statistics.dropped_kernel_count,
                  options_.source.c_str());
@@ -1861,15 +1859,12 @@ int Driver::run() {
     return 1;
   }
   write_dependency_file();
-  // Host code generation and the device pass read the same unit and neither
-  // changes its AST, so either may run first; --loom-import-first checks it.
-  if (options_.import_first && !run_device_pass()) {
-    return 1;
-  }
+  // The device pass imports the kernels of the descriptors host code
+  // references, so host code generation runs first.
   if (!generate_host_code()) {
     return 1;
   }
-  if (!options_.import_first && !kernel_refs_.empty() && !run_device_pass()) {
+  if (!kernel_refs_.empty() && !run_device_pass()) {
     return 1;
   }
   embed_device_code();
