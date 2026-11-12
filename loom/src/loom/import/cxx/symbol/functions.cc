@@ -656,7 +656,7 @@ std::vector<KernelLaunch> Functions::kernel_launches() {
 namespace {
 
 // loom::kernel::descriptor_version in loomcxx/kernel_ref.h.
-constexpr unsigned kDescriptorVersion = 1;
+constexpr unsigned kDescriptorVersion = 2;
 
 // Quotes an assembler symbol or string operand.
 std::string assembly_quote(std::string_view text) {
@@ -684,7 +684,8 @@ void Functions::write_kernel_descriptors() {
   // same descriptor. Layout of loom::kernel::descriptor and descriptor_leaf in
   // loomcxx/kernel_ref.h:
   //   u32 version, u32 flags, ptr name, u32 workgroup_size[3],
-  //   u32 kernarg_size, u32 parameter_count, u32 leaf_count, ptr leaves
+  //   u32 kernarg_size, u32 parameter_count, u32 leaf_count, ptr leaves,
+  //   ptr code_object (null: any registered code object exporting the name)
   //   leaf: u32 parameter, kind, source_offset, kernarg_offset, size
   // A kernel_ref whose kernel was dropped or excluded has flags 0 and no
   // leaves: the host reports the launch as having no device code.
@@ -706,7 +707,7 @@ void Functions::write_kernel_descriptors() {
         "  .section {3},\"aG\",%progbits,{0},comdat\n"
         "  .weak {0}\n"
         "  .type {0},%object\n"
-        "  .size {0},48\n"
+        "  .size {0},56\n"
         "  .p2align 3\n"
         "{0}:\n"
         "  .long {4}, {1}\n"
@@ -728,8 +729,8 @@ void Functions::write_kernel_descriptors() {
                           launch.workgroup_size[2], kernarg_size,
                           launch.parameter_count, launch.leaves.size());
       text += launch.leaves.empty()
-                  ? std::string("  .quad 0\n")
-                  : std::format("  .quad {}_leaves\n{}_leaves:\n",
+                  ? std::string("  .quad 0\n  .quad 0\n")
+                  : std::format("  .quad {}_leaves\n  .quad 0\n{}_leaves:\n",
                                 label, label);
       for (size_t i = 0; i < launch.leaves.size(); ++i) {
         const auto& leaf = launch.leaves[i];
@@ -738,7 +739,7 @@ void Functions::write_kernel_descriptors() {
                             leaf.size);
       }
     } else {
-      text += "  .long 0, 0, 0, 0, 0, 0\n  .quad 0\n";
+      text += "  .long 0, 0, 0, 0, 0, 0\n  .quad 0\n  .quad 0\n";
     }
     text += std::format("{}_name:\n  .asciz {}\n", label,
                         assembly_quote(launch.export_name));

@@ -887,7 +887,7 @@ TEST_F(LaunchedImportTest, KernelDescriptorSymbolsAreKernelRefSpecializations) {
                                "  .weak " + quoted + "\n"),
               std::string::npos)
         << descriptors;
-    EXPECT_NE(descriptors.find("  .size " + quoted + ",48\n"),
+    EXPECT_NE(descriptors.find("  .size " + quoted + ",56\n"),
               std::string::npos)
         << descriptors;
   }
@@ -896,14 +896,14 @@ TEST_F(LaunchedImportTest, KernelDescriptorSymbolsAreKernelRefSpecializations) {
 TEST_F(LaunchedImportTest, KernelDescriptorsFollowKernelArgumentFlattening) {
   IREE_ASSERT_OK(Import(iree_make_cstring_view(kKernelRefSource)));
   ASSERT_NE(module_, nullptr);
-  // Version 1, available. The configuration computes the workgroup size.
+  // Version 2, available. The configuration computes the workgroup size.
   // One leaf per kernel argument, in argument order: the base's field, each
   // array element, then one buffer leaf per pointer. Source offsets are the
   // host object's (LP64): Base at 0, pad at 4, x at 16, y at 24. Kernel
   // arguments align buffers to 8 and scalars to 4 (the legacy copy of the
   // AMDGPU layout).
   const std::string body = Descriptor(kBodyReference);
-  EXPECT_NE(body.find("  .long 1, 1\n"), std::string::npos) << body;
+  EXPECT_NE(body.find("  .long 2, 1\n"), std::string::npos) << body;
   EXPECT_NE(body.find("  .long 0, 0, 0, 32, 1, 5\n"), std::string::npos)
       << body;
   EXPECT_NE(body.find("  .long 0, 0, 0, 0, 4\n"
@@ -940,13 +940,13 @@ TEST_F(LaunchedImportTest, ExcludedKernelRefKernelsKeepUnavailableDescriptors) {
   // The host still references the excluded kernel's descriptor: it is
   // defined without the available flag and without leaves.
   const std::string other = Descriptor(kOtherReference);
-  EXPECT_NE(other.find("  .long 1, 0\n"), std::string::npos) << other;
+  EXPECT_NE(other.find("  .long 2, 0\n"), std::string::npos) << other;
   EXPECT_NE(other.find("  .long 0, 0, 0, 0, 0, 0\n  .quad 0\n"),
             std::string::npos)
       << other;
   EXPECT_NE(other.find("  .asciz \"_Z3runI5OtherEvT_\"\n"), std::string::npos)
       << other;
-  EXPECT_NE(Descriptor(kBodyReference).find("  .long 1, 1\n"),
+  EXPECT_NE(Descriptor(kBodyReference).find("  .long 2, 1\n"),
             std::string::npos);
 }
 
@@ -966,8 +966,8 @@ const loom::kernel::descriptor* host_bad() { return describe<Bad>(); }
   EXPECT_EQ(Print().find("_Z3runI3BadEvT_"), std::string::npos);
   const std::string bad =
       Descriptor("_ZN4loom6kernel10kernel_refIXadL_Z3runI3BadEvT_EEEE");
-  EXPECT_NE(bad.find("  .long 1, 0\n"), std::string::npos) << Descriptors();
-  EXPECT_NE(Descriptor(kBodyReference).find("  .long 1, 1\n"),
+  EXPECT_NE(bad.find("  .long 2, 0\n"), std::string::npos) << Descriptors();
+  EXPECT_NE(Descriptor(kBodyReference).find("  .long 2, 1\n"),
             std::string::npos);
 }
 
@@ -1026,7 +1026,7 @@ TEST_F(LaunchedImportTest, ParsedUnitImportsWithoutReparsing) {
   ASSERT_NE(module_, nullptr);
   EXPECT_EQ(error_count_, 0);
   EXPECT_NE(Print().find("@_Z3runI4BodyEvT_"), std::string::npos);
-  EXPECT_NE(Descriptor(kBodyReference).find("  .long 1, 1\n"),
+  EXPECT_NE(Descriptor(kBodyReference).find("  .long 2, 1\n"),
             std::string::npos);
 
   // Importing again, for example with a kernel the device compiler rejected
@@ -1040,7 +1040,7 @@ TEST_F(LaunchedImportTest, ParsedUnitImportsWithoutReparsing) {
                                       iree_allocator_system(), &module_));
   ASSERT_NE(module_, nullptr);
   EXPECT_EQ(Print().find("@_Z3runI4BodyEvT_"), std::string::npos);
-  EXPECT_NE(Descriptor(kBodyReference).find("  .long 1, 0\n"),
+  EXPECT_NE(Descriptor(kBodyReference).find("  .long 2, 0\n"),
             std::string::npos);
   EXPECT_EQ(loom::cxx_import::unit_statistics(unit).import_count, 2u);
   const auto imported = loom::cxx_import::frontend_statistics();

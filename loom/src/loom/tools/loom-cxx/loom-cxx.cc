@@ -20,12 +20,17 @@
 //      or the device compiler rejects are dropped when the drop policy allows,
 //      and the unit is translated again without them (it is not reparsed).
 //   3. Output: the device code object is embedded in the host module, with a
-//      static constructor passing it to --loom-register-function, and the
-//      importer's kernel descriptors (weak COMDAT definitions of the
-//      kernel_ref symbols) become module assembly. Descriptors the host
-//      references but the device pass did not define are emitted without
-//      their available flag, so launching them fails at run time instead of
-//      at link time. The module is emitted as one object file.
+//      static constructor passing it to --loom-register-function. Every
+//      kernel_ref descriptor the host references is defined in the host
+//      module with internal linkage, so the object exports no kernel_ref
+//      symbol and each object's launches resolve to its own descriptors and
+//      its own code object (loomcxx/kernel_ref.h). A descriptor combines the
+//      importer's host leaves (source offsets and sizes in the host object)
+//      with the kernel argument layout that the device compiler reports for
+//      the compiled kernel in its artifact manifest. Descriptors of kernels
+//      without device code are defined without their available flag, so
+//      launching them fails at run time instead of at link time. The module
+//      is emitted as one object file.
 
 #include <cxx/memory_layout.h>
 #include <cxx/mlir/llvm_codegen.h>
@@ -38,8 +43,10 @@
 #include <llvm/IR/Function.h>
 #include <llvm/IR/GlobalVariable.h>
 #include <llvm/IR/IRBuilder.h>
+#include <llvm/IR/Instruction.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Module.h>
+#include <llvm/Support/JSON.h>
 #include <llvm/Support/raw_ostream.h>
 #include <llvm/Target/TargetMachine.h>
 #include <llvm/Transforms/Utils/ModuleUtils.h>
@@ -47,6 +54,7 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
@@ -61,6 +69,7 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -69,6 +78,7 @@
 #include "loom/import/cxx/unit.h"
 #include "loom/tooling/cli/loomc_result.h"
 #include "loomc/artifact.h"
+#include "loomc/artifact_manifest.h"
 #include "loomc/compile.h"
 #include "loomc/config.h"
 #include "loomc/context.h"
@@ -91,6 +101,10 @@ constexpr std::string_view kTool = "loom-cxx";
 constexpr std::string_view kKernelRefPrefix = "_ZN4loom6kernel10kernel_ref";
 // Rounds of compile-rejection exclusion, as in the previous two-pass driver.
 constexpr int kMaxDeviceRounds = 5;
+// loom::kernel::descriptor_version and descriptor_leaf_* in
+// loomcxx/kernel_ref.h.
+constexpr uint32_t kDescriptorVersion = 2;
+constexpr uint32_t kDescriptorLeafBuffer = 1;
 
 enum class DeviceFailurePolicy {
   // A failed device pass fails the compile.
@@ -441,8 +455,12 @@ class Driver {
                             std::string& bytecode_out, bool& has_kernels);
   bool compile_device_module(const std::string& bytecode,
                              std::vector<std::string>& rejected);
+  void read_argument_layouts(const loomc_result_t* result);
   void device_failure(std::string_view stage, std::string_view log);
   void embed_device_code();
+  void define_kernel_descriptors(llvm::GlobalVariable* code_object);
+  void localize_descriptor_users(
+      const std::vector<llvm::GlobalVariable*>& descriptors);
   void emit_object();
   std::string temp_path(std::string_view name) const;
 
@@ -461,7 +479,22 @@ class Driver {
   // Device side.
   std::string work_directory_;
   bool keep_work_directory_ = false;
-  std::string descriptors_;
+  // Host launch facts of the kernel_ref specializations, from the importer.
+  std::vector<loom::cxx_import::KernelLaunch> launches_;
+  // Kernel argument layout of one compiled kernel export, from the device
+  // compiler's artifact manifest.
+  struct ArgumentLayout {
+    // Byte offset and payload length of each argument, in argument order.
+    struct Argument {
+      bool buffer = false;
+      uint64_t offset = 0;
+      uint64_t length = 0;
+      bool present = false;
+    };
+    uint64_t segment_size = 0;
+    std::vector<Argument> arguments;
+  };
+  std::unordered_map<std::string, ArgumentLayout> layouts_;
   std::string code_object_;
   int import_count_ = 0;
   int device_compile_count_ = 0;
@@ -700,15 +733,14 @@ void Driver::device_failure(std::string_view stage, std::string_view log) {
   }
   std::fprintf(stderr, "%s: warning: continuing without device code for %s\n",
                kTool.data(), options_.source.c_str());
-  descriptors_.clear();
+  launches_.clear();
+  layouts_.clear();
   code_object_.clear();
 }
 
 bool Driver::import_device_module(std::vector<std::string>& excluded, int round,
                                   std::string& bytecode, bool& has_kernels) {
   auto start = Clock::now();
-  const std::string descriptors_path = temp_path("descriptors.s");
-  std::filesystem::remove(descriptors_path);
   const loomc_string_view_t roots[] = {loomc_make_cstring_view("@launched")};
   std::vector<loomc_string_view_t> excluded_views;
   for (const auto& name : excluded) {
@@ -722,8 +754,6 @@ bool Driver::import_device_module(std::vector<std::string>& excluded, int round,
   options.root_count = 1;
   options.excluded_kernels = excluded_views.data();
   options.excluded_kernel_count = excluded_views.size();
-  options.kernel_descriptors_path =
-      loomc_make_cstring_view(descriptors_path.c_str());
 
   auto* native_unit = reinterpret_cast<loom_cxx_unit_t*>(unit_.get());
   loomc_module_t* raw_module = nullptr;
@@ -763,8 +793,9 @@ bool Driver::import_device_module(std::vector<std::string>& excluded, int round,
     device_failure("device import", log);
     return false;
   }
-  descriptors_ = read_file(descriptors_path).value_or(std::string());
-  has_kernels = descriptors_.find("\n  .weak") != std::string::npos;
+  launches_ = loom::cxx_import::unit_kernel_launches(native_unit);
+  has_kernels = std::any_of(launches_.begin(), launches_.end(),
+                            [](const auto& launch) { return launch.available; });
   if (!has_kernels) {
     import_seconds_ += seconds_since(start);
     return true;
@@ -872,9 +903,16 @@ bool Driver::compile_device_module(const std::string& bytecode,
 
   loomc_config_options_t config = {};
   config.flags = LOOMC_CONFIG_POLICY_FLAG_REQUIRE_RESOLVED;
+  // The details manifest reports each kernel's argument layout as the device
+  // compiler decided it.
+  loomc_artifact_manifest_options_t manifest_options = {};
+  manifest_options.type = LOOMC_STRUCTURE_TYPE_ARTIFACT_MANIFEST_OPTIONS;
+  manifest_options.structure_size = sizeof(manifest_options);
+  manifest_options.mode = LOOMC_ARTIFACT_MANIFEST_MODE_DETAILS;
   loomc_emit_options_t emit_options = {};
   emit_options.type = LOOMC_STRUCTURE_TYPE_EMIT_OPTIONS;
   emit_options.structure_size = sizeof(emit_options);
+  emit_options.next = &manifest_options;
   emit_options.artifact_format =
       loomc_make_cstring_view(options_.loom_format.c_str());
   emit_options.artifact_flags = LOOMC_EMIT_ARTIFACT_FLAG_PRIMARY;
@@ -975,7 +1013,91 @@ bool Driver::compile_device_module(const std::string& bytecode,
   if (keep_work_directory_) {
     std::ofstream(temp_path("device.code"), std::ios::binary) << code_object_;
   }
+  read_argument_layouts(result.get());
   return true;
+}
+
+// Reads the kernel argument layout of every compiled kernel export from the
+// artifact manifest of |result|.
+void Driver::read_argument_layouts(const loomc_result_t* result) {
+  layouts_.clear();
+  std::string manifest;
+  for (loomc_host_size_t i = 0; i < loomc_result_artifact_count(result); ++i) {
+    const auto* artifact = loomc_result_artifact_at(result, i);
+    if (artifact->kind != LOOMC_ARTIFACT_KIND_REPORT ||
+        std::string_view(artifact->format.data, artifact->format.size) !=
+            LOOMC_ARTIFACT_FORMAT_ARTIFACT_MANIFEST_JSON) {
+      continue;
+    }
+    loomc_source_t* raw_artifact = nullptr;
+    check(loomc_artifact_create_source(artifact, LOOMC_SOURCE_FORMAT_UNKNOWN,
+                                       loomc_allocator_system(), &raw_artifact),
+          "reading the device artifact manifest");
+    Source artifact_source(raw_artifact);
+    const auto contents = loomc_source_contents(artifact_source.get());
+    manifest.assign(reinterpret_cast<const char*>(contents.data),
+                    contents.data_length);
+  }
+  if (keep_work_directory_) {
+    std::ofstream(temp_path("device.manifest.json")) << manifest;
+  }
+  auto fail = [&](const std::string& message) {
+    std::fprintf(stderr, "%s: error: device artifact manifest: %s\n",
+                 kTool.data(), message.c_str());
+    throw Failure{};
+  };
+  if (manifest.empty()) {
+    fail("the device compiler produced none");
+  }
+  auto parsed = llvm::json::parse(manifest);
+  if (!parsed) {
+    fail(llvm::toString(parsed.takeError()));
+  }
+  const auto* functions = parsed->getAsObject()
+                              ? parsed->getAsObject()->getArray("functions")
+                              : nullptr;
+  if (!functions) {
+    fail("no functions");
+  }
+  for (const auto& value : *functions) {
+    const auto* function = value.getAsObject();
+    const auto name = function ? function->getString("name") : std::nullopt;
+    const auto* interface =
+        function ? function->getObject("interface") : nullptr;
+    if (!name || !interface) {
+      fail("malformed function");
+    }
+    ArgumentLayout layout;
+    const auto segment_size = interface->getInteger("argument_byte_length");
+    const auto parameter_count = interface->getInteger("parameter_count");
+    // A kernel without parameters has no argument segment.
+    if (!parameter_count || (!segment_size && *parameter_count != 0)) {
+      fail(std::format("no kernel argument layout for '{}'", name->str()));
+    }
+    layout.segment_size = static_cast<uint64_t>(segment_size.value_or(0));
+    layout.arguments.resize(static_cast<size_t>(*parameter_count));
+    if (const auto* parameters = interface->getArray("parameters")) {
+      for (const auto& parameter_value : *parameters) {
+        const auto* parameter = parameter_value.getAsObject();
+        const auto index = parameter ? parameter->getInteger("index") : std::nullopt;
+        const auto kind = parameter ? parameter->getString("kind") : std::nullopt;
+        const auto offset =
+            parameter ? parameter->getInteger("byte_offset") : std::nullopt;
+        const auto length =
+            parameter ? parameter->getInteger("byte_length") : std::nullopt;
+        if (!index || !kind || !offset || !length || *index < 0 ||
+            static_cast<size_t>(*index) >= layout.arguments.size()) {
+          fail(std::format("malformed argument of '{}'", name->str()));
+        }
+        auto& argument = layout.arguments[static_cast<size_t>(*index)];
+        argument.buffer = *kind == "binding";
+        argument.offset = static_cast<uint64_t>(*offset);
+        argument.length = static_cast<uint64_t>(*length);
+        argument.present = true;
+      }
+    }
+    layouts_[name->str()] = std::move(layout);
+  }
 }
 
 bool Driver::device_pass() {
@@ -1018,72 +1140,217 @@ bool Driver::device_pass() {
   return false;
 }
 
-std::string assembly_quote(std::string_view text) {
-  std::string quoted = "\"";
-  for (char c : text) {
-    if (c == '"' || c == '\\') {
-      quoted += '\\';
-    }
-    quoted += c;
+void Driver::embed_device_code() {
+  llvm::GlobalVariable* blob = nullptr;
+  if (!code_object_.empty()) {
+    // The code object, and a static constructor registering it.
+    auto& context = host_module_->getContext();
+    auto* data = llvm::ConstantDataArray::get(
+        context, llvm::ArrayRef<uint8_t>(
+                     reinterpret_cast<const uint8_t*>(code_object_.data()),
+                     code_object_.size()));
+    blob = new llvm::GlobalVariable(
+        *host_module_, data->getType(), /*isConstant=*/true,
+        llvm::GlobalValue::PrivateLinkage, data, "__loom_cxx_code_object");
+    blob->setAlignment(llvm::Align(16));
+    auto* void_type = llvm::Type::getVoidTy(context);
+    auto* pointer_type = llvm::PointerType::getUnqual(context);
+    auto* size_type = host_module_->getDataLayout().getIntPtrType(context);
+    auto callee = host_module_->getOrInsertFunction(
+        options_.register_function,
+        llvm::FunctionType::get(
+            void_type, {static_cast<llvm::Type*>(pointer_type), size_type},
+            false));
+    auto* constructor =
+        llvm::Function::Create(llvm::FunctionType::get(void_type, false),
+                               llvm::GlobalValue::InternalLinkage,
+                               "__loom_cxx_register_code_object", *host_module_);
+    llvm::IRBuilder<> builder(
+        llvm::BasicBlock::Create(context, "entry", constructor));
+    llvm::Value* arguments[] = {
+        blob, llvm::ConstantInt::get(size_type, code_object_.size())};
+    builder.CreateCall(callee, arguments);
+    builder.CreateRetVoid();
+    llvm::appendToGlobalCtors(*host_module_, constructor, 65535);
   }
-  return quoted + "\"";
+  define_kernel_descriptors(blob);
 }
 
-void Driver::embed_device_code() {
-  std::string assembly = descriptors_;
-  // Unavailable descriptors for references the device pass did not define, so
-  // the object always links; launching one fails at run time.
-  int missing = 0;
-  for (const auto& symbol : kernel_refs_) {
-    if (descriptors_.find(".weak " + assembly_quote(symbol) + "\n") !=
-        std::string::npos) {
-      continue;
-    }
-    const auto quoted = assembly_quote(symbol);
-    const auto label = std::format(".Lloom_cxx_missing_{}", missing++);
-    assembly += std::format(
-        "  .section {3},\"aG\",%progbits,{0},comdat\n"
-        "  .weak {0}\n  .type {0},%object\n  .size {0},48\n  .p2align 3\n"
-        "{0}:\n  .long 1, 0\n  .quad {1}\n"
-        "  .long 0, 0, 0, 0, 0, 0\n  .quad 0\n{1}:\n  .asciz {2}\n",
-        quoted, label, quoted, assembly_quote(".rodata." + symbol));
-  }
-  if (!assembly.empty()) {
-    host_module_->appendModuleInlineAsm(assembly);
-  }
-  if (code_object_.empty()) {
+// Defines every kernel_ref descriptor the host module references, in the
+// module, with internal linkage (layout in loomcxx/kernel_ref.h). A kernel is
+// available when the importer imported it and the device compiler compiled
+// it; its leaves take their kernel argument offsets and payload sizes from
+// the compiled kernel's layout, and the descriptor names this object's code
+// object. Other references get descriptors without the available flag.
+void Driver::define_kernel_descriptors(llvm::GlobalVariable* code_object) {
+  if (kernel_refs_.empty()) {
     return;
   }
-
-  // The code object, and a static constructor registering it.
   auto& context = host_module_->getContext();
-  auto* data = llvm::ConstantDataArray::get(
-      context, llvm::ArrayRef<uint8_t>(
-                   reinterpret_cast<const uint8_t*>(code_object_.data()),
-                   code_object_.size()));
-  auto* blob = new llvm::GlobalVariable(
-      *host_module_, data->getType(), /*isConstant=*/true,
-      llvm::GlobalValue::PrivateLinkage, data, "__loom_cxx_code_object");
-  blob->setAlignment(llvm::Align(16));
-  auto* void_type = llvm::Type::getVoidTy(context);
-  auto* pointer_type = llvm::PointerType::getUnqual(context);
-  auto* size_type = host_module_->getDataLayout().getIntPtrType(context);
-  auto callee = host_module_->getOrInsertFunction(
-      options_.register_function,
-      llvm::FunctionType::get(
-          void_type, {static_cast<llvm::Type*>(pointer_type), size_type},
-          false));
-  auto* constructor =
-      llvm::Function::Create(llvm::FunctionType::get(void_type, false),
-                             llvm::GlobalValue::InternalLinkage,
-                             "__loom_cxx_register_code_object", *host_module_);
-  llvm::IRBuilder<> builder(
-      llvm::BasicBlock::Create(context, "entry", constructor));
-  llvm::Value* arguments[] = {
-      blob, llvm::ConstantInt::get(size_type, code_object_.size())};
-  builder.CreateCall(callee, arguments);
-  builder.CreateRetVoid();
-  llvm::appendToGlobalCtors(*host_module_, constructor, 65535);
+  auto* i32 = llvm::Type::getInt32Ty(context);
+  auto* pointer = llvm::PointerType::getUnqual(context);
+  auto* leaf_type = llvm::StructType::get(context, {i32, i32, i32, i32, i32});
+  auto* descriptor_type = llvm::StructType::get(
+      context, {i32, i32, pointer, llvm::ArrayType::get(i32, 3), i32, i32, i32,
+                pointer, pointer});
+  auto u32 = [&](uint64_t value) -> llvm::Constant* {
+    return llvm::ConstantInt::get(i32, value);
+  };
+  auto fail = [&](const std::string& symbol, const std::string& message) {
+    std::fprintf(stderr, "%s: error: kernel descriptor %s: %s\n", kTool.data(),
+                 symbol.c_str(), message.c_str());
+    throw Failure{};
+  };
+  std::vector<llvm::GlobalVariable*> descriptors;
+  std::unordered_map<std::string, const loom::cxx_import::KernelLaunch*>
+      launches;
+  for (const auto& launch : launches_) {
+    launches.emplace(launch.symbol, &launch);
+  }
+  for (size_t index = 0; index < kernel_refs_.size(); ++index) {
+    const std::string& symbol = kernel_refs_[index];
+    auto* declaration = host_module_->getGlobalVariable(symbol);
+    if (!declaration || !declaration->isDeclaration()) {
+      continue;
+    }
+    auto found = launches.find(symbol);
+    const auto* launch = found == launches.end() ? nullptr : found->second;
+    const ArgumentLayout* layout = nullptr;
+    if (launch && launch->available && code_object) {
+      auto layout_found = layouts_.find(launch->export_name);
+      if (layout_found == layouts_.end()) {
+        fail(symbol, std::format("the device code object has no export '{}'",
+                                 launch->export_name));
+      }
+      layout = &layout_found->second;
+    }
+    const std::string name =
+        launch && !launch->export_name.empty() ? launch->export_name : symbol;
+    auto* name_data = llvm::ConstantDataArray::getString(context, name);
+    auto* name_global = new llvm::GlobalVariable(
+        *host_module_, name_data->getType(), /*isConstant=*/true,
+        llvm::GlobalValue::PrivateLinkage, name_data,
+        std::format("__loom_cxx_kernel_name.{}", index));
+    name_global->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
+
+    std::array<llvm::Constant*, 3> workgroup_size = {u32(0), u32(0), u32(0)};
+    llvm::Constant* leaves = llvm::ConstantPointerNull::get(pointer);
+    llvm::Constant* code_object_reference =
+        llvm::ConstantPointerNull::get(pointer);
+    uint64_t segment_size = 0, parameter_count = 0, leaf_count = 0;
+    if (layout) {
+      // Leaf i is argument i of the compiled kernel.
+      if (layout->arguments.size() != launch->leaves.size()) {
+        fail(symbol,
+             std::format("'{}' has {} kernel arguments but {} host leaves",
+                         launch->export_name, layout->arguments.size(),
+                         launch->leaves.size()));
+      }
+      std::vector<llvm::Constant*> rows;
+      for (size_t i = 0; i < launch->leaves.size(); ++i) {
+        const auto& leaf = launch->leaves[i];
+        const auto& argument = layout->arguments[i];
+        const bool buffer = leaf.kind == kDescriptorLeafBuffer;
+        // A buffer argument carries the host pointer; a by-value argument
+        // carries its payload, the low-address bytes of the host object.
+        if (!argument.present || argument.buffer != buffer ||
+            argument.length > leaf.size ||
+            (buffer && argument.length != leaf.size) ||
+            argument.offset + argument.length > layout->segment_size) {
+          fail(symbol,
+               std::format("argument {} of '{}' (offset {}, {} bytes{}) does "
+                           "not hold the host leaf ({} bytes{})",
+                           i, launch->export_name, argument.offset,
+                           argument.length, argument.buffer ? ", buffer" : "",
+                           leaf.size, buffer ? ", pointer" : ""));
+        }
+        rows.push_back(llvm::ConstantStruct::get(
+            leaf_type, {u32(leaf.parameter), u32(leaf.kind),
+                        u32(leaf.source_offset), u32(argument.offset),
+                        u32(argument.length)}));
+      }
+      if (!rows.empty()) {
+        auto* table_type = llvm::ArrayType::get(leaf_type, rows.size());
+        auto* table = new llvm::GlobalVariable(
+            *host_module_, table_type, /*isConstant=*/true,
+            llvm::GlobalValue::PrivateLinkage,
+            llvm::ConstantArray::get(table_type, rows),
+            std::format("__loom_cxx_kernel_leaves.{}", index));
+        table->setAlignment(llvm::Align(4));
+        leaves = table;
+      }
+      for (size_t i = 0; i < 3; ++i) {
+        workgroup_size[i] = u32(launch->workgroup_size[i]);
+      }
+      segment_size = layout->segment_size;
+      parameter_count = launch->parameter_count;
+      leaf_count = rows.size();
+      code_object_reference = code_object;
+    }
+    auto* initializer = llvm::ConstantStruct::get(
+        descriptor_type,
+        {u32(kDescriptorVersion), u32(layout ? 1 : 0), name_global,
+         llvm::ConstantArray::get(llvm::ArrayType::get(i32, 3), workgroup_size),
+         u32(segment_size), u32(parameter_count), u32(leaf_count), leaves,
+         code_object_reference});
+    // A local definition replaces the external declaration: no kernel_ref
+    // symbol leaves the object, and no other object's descriptor can
+    // satisfy (or replace) this object's references.
+    auto* descriptor = new llvm::GlobalVariable(
+        *host_module_, descriptor_type, /*isConstant=*/true,
+        llvm::GlobalValue::InternalLinkage, initializer);
+    descriptor->setAlignment(llvm::Align(8));
+    descriptor->takeName(declaration);
+    declaration->replaceAllUsesWith(descriptor);
+    declaration->eraseFromParent();
+    descriptors.push_back(descriptor);
+  }
+  localize_descriptor_users(descriptors);
+}
+
+// Gives local linkage to every mergeable (inline, template) definition that
+// refers to a descriptor, directly or through other definitions. The linker
+// keeps one copy of a mergeable definition, which would make every object's
+// launches through it use one object's descriptors (and code object): a
+// kernel dropped in that object would be unavailable everywhere. Definitions
+// with strong external linkage are unique to the object and stop the walk.
+void Driver::localize_descriptor_users(
+    const std::vector<llvm::GlobalVariable*>& descriptors) {
+  std::vector<llvm::GlobalValue*> worklist(descriptors.begin(),
+                                           descriptors.end());
+  std::unordered_set<llvm::GlobalValue*> visited(worklist.begin(),
+                                                 worklist.end());
+  auto reach = [&](llvm::GlobalValue* user) {
+    if (!user || user->isDeclaration() || !visited.insert(user).second) {
+      return;
+    }
+    if (!user->hasLocalLinkage()) {
+      if (!user->isWeakForLinker()) {
+        return;  // strong definition: unique to this object
+      }
+      user->setLinkage(llvm::GlobalValue::InternalLinkage);
+      if (auto* object = llvm::dyn_cast<llvm::GlobalObject>(user)) {
+        object->setComdat(nullptr);
+      }
+    }
+    worklist.push_back(user);
+  };
+  while (!worklist.empty()) {
+    llvm::GlobalValue* value = worklist.back();
+    worklist.pop_back();
+    std::vector<llvm::User*> users(value->user_begin(), value->user_end());
+    while (!users.empty()) {
+      llvm::User* user = users.back();
+      users.pop_back();
+      if (auto* instruction = llvm::dyn_cast<llvm::Instruction>(user)) {
+        reach(instruction->getFunction());
+      } else if (auto* global = llvm::dyn_cast<llvm::GlobalValue>(user)) {
+        reach(global);
+      } else if (llvm::isa<llvm::Constant>(user)) {
+        users.insert(users.end(), user->user_begin(), user->user_end());
+      }
+    }
+  }
 }
 
 void Driver::emit_object() {

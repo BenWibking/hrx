@@ -10,6 +10,7 @@ constructor, and the kernel descriptors, all from one parse of the source."""
 
 import argparse
 import pathlib
+import shutil
 import struct
 import subprocess
 import sys
@@ -20,9 +21,12 @@ ARGS = None
 
 EM_X86_64, EM_AARCH64 = 62, 183
 HOST_MACHINES = (EM_X86_64, EM_AARCH64)
-STB_GLOBAL, STB_WEAK = 1, 2
+STB_LOCAL, STB_GLOBAL, STB_WEAK = 0, 1, 2
 STT_OBJECT, STT_FUNC = 1, 2
 SHN_UNDEF = 0
+SHT_RELA, SHT_NOTE = 4, 7
+KERNEL_REF_PREFIX = "_ZN4loom6kernel10kernel_ref"
+DESCRIPTOR_VERSION = 2
 
 KERNEL_PRELUDE = r"""
 #include <loomcxx/kernel.h>
@@ -71,27 +75,201 @@ class Elf:
     def contents(self, section):
         return self.data[section[4] : section[4] + section[5]]
 
-    def symbols(self):
+    def symbol_table(self):
+        """(name, binding, type, section index, value) per symbol, by index."""
         symtab = self.section(".symtab")
         strtab = self.sections[symtab[6]]
-        result = {}
+        result = []
         for offset in range(0, symtab[5], 24):
-            name, info, _, shndx, _, _ = struct.unpack_from(
+            name, info, _, shndx, value, _ = struct.unpack_from(
                 "<IBBHQQ", self.data, symtab[4] + offset
             )
-            if name:
-                result[self._string(strtab, name)] = (info >> 4, info & 15, shndx)
+            name = self._string(strtab, name) if name else ""
+            result.append((name, info >> 4, info & 15, shndx, value))
+        return result
+
+    def symbols(self):
+        return {
+            name: (binding, kind, shndx)
+            for name, binding, kind, shndx, _ in self.symbol_table()
+            if name
+        }
+
+    def kernel_ref_symbols(self):
+        """(binding, section index) of every kernel_ref symbol."""
+        return [
+            (name, binding, shndx)
+            for name, binding, _, shndx, _ in self.symbol_table()
+            if name.startswith(KERNEL_REF_PREFIX)
+        ]
+
+    def relocations(self, section_index):
+        """Pointer relocations applying to a section: offset -> (section, offset)."""
+        table = self.symbol_table()
+        result = {}
+        for section in self.sections:
+            if section[1] != SHT_RELA or section[7] != section_index:
+                continue
+            for offset in range(0, section[5], 24):
+                r_offset, r_info, r_addend = struct.unpack_from(
+                    "<QQq", self.data, section[4] + offset
+                )
+                _, _, _, shndx, value = table[r_info >> 32]
+                result[r_offset] = (shndx, value + r_addend)
+        return result
+
+    def read(self, section_index, offset, size):
+        start = self.sections[section_index][4] + offset
+        return self.data[start : start + size]
+
+    def c_string(self, section_index, offset):
+        start = self.sections[section_index][4] + offset
+        return self.data[start : self.data.index(b"\0", start)].decode()
+
+    def descriptor(self, symbol):
+        """The loom::kernel::descriptor (loomcxx/kernel_ref.h) at a symbol."""
+        for name, _, _, shndx, value in self.symbol_table():
+            if name == symbol and shndx != SHN_UNDEF:
+                break
+        else:
+            return None
+        relocations = self.relocations(shndx)
+        (version, flags) = struct.unpack("<II", self.read(shndx, value, 8))
+        wg = struct.unpack("<III", self.read(shndx, value + 16, 12))
+        kernarg_size, parameter_count, leaf_count = struct.unpack(
+            "<III", self.read(shndx, value + 28, 12)
+        )
+        name = relocations.get(value + 8)
+        leaves = relocations.get(value + 40)
+        code_object = relocations.get(value + 48)
+        leaf_rows = []
+        if leaves:
+            for i in range(leaf_count):
+                leaf_rows.append(
+                    struct.unpack(
+                        "<IIIII", self.read(leaves[0], leaves[1] + 20 * i, 20)
+                    )
+                )
+        return {
+            "version": version,
+            "flags": flags,
+            "name": self.c_string(*name) if name else None,
+            "workgroup_size": wg,
+            "kernarg_size": kernarg_size,
+            "parameter_count": parameter_count,
+            "leaves": leaf_rows,
+            "code_object": code_object,
+        }
+
+    def code_object_at(self, location):
+        """The embedded ELF code object starting at (section, offset)."""
+        start = self.sections[location[0]][4] + location[1]
+        data = self.data[start:]
+        assert data[:4] == b"\x7fELF", "no code object at the descriptor's address"
+        (shoff,) = struct.unpack_from("<Q", data, 0x28)
+        shentsize, shnum = struct.unpack_from("<HH", data, 0x3A)
+        return Elf(data[: shoff + shentsize * shnum])
+
+    def amdgpu_kernel_arguments(self):
+        """Kernel name -> (kernarg segment size, [(offset, size, value kind)])
+        from the AMDGPU code object metadata note."""
+        result = {}
+        for section in self.sections:
+            if section[1] != SHT_NOTE:
+                continue
+            notes = self.data[section[4] : section[4] + section[5]]
+            position = 0
+            while position + 12 <= len(notes):
+                namesz, descsz, kind = struct.unpack_from("<III", notes, position)
+                position += 12
+                name = notes[position : position + namesz]
+                position += (namesz + 3) & ~3
+                desc = notes[position : position + descsz]
+                position += (descsz + 3) & ~3
+                if name.rstrip(b"\0") != b"AMDGPU" or kind != 32:
+                    continue
+                metadata, _ = msgpack_decode(desc, 0)
+                for kernel in metadata["amdhsa.kernels"]:
+                    result[kernel[".name"]] = (
+                        kernel[".kernarg_segment_size"],
+                        [
+                            (a[".offset"], a[".size"], a[".value_kind"])
+                            for a in kernel.get(".args", [])
+                        ],
+                    )
         return result
 
 
+def msgpack_decode(data, position):
+    """Minimal MessagePack decoder for AMDGPU code object metadata."""
+    tag = data[position]
+    position += 1
+
+    def take(fmt):
+        nonlocal position
+        (value,) = struct.unpack_from(">" + fmt, data, position)
+        position += struct.calcsize(fmt)
+        return value
+
+    def items(count, mapping):
+        nonlocal position
+        if mapping:
+            result = {}
+            for _ in range(count):
+                key, position = msgpack_decode(data, position)
+                result[key], position = msgpack_decode(data, position)
+            return result
+        result = []
+        for _ in range(count):
+            value, position = msgpack_decode(data, position)
+            result.append(value)
+        return result
+
+    def raw(count, text):
+        nonlocal position
+        value = data[position : position + count]
+        position += count
+        return value.decode() if text else bytes(value)
+
+    if tag <= 0x7F:
+        return tag, position
+    if tag >= 0xE0:
+        return tag - 0x100, position
+    if 0x80 <= tag <= 0x8F:
+        return items(tag & 0x0F, True), position
+    if 0x90 <= tag <= 0x9F:
+        return items(tag & 0x0F, False), position
+    if 0xA0 <= tag <= 0xBF:
+        return raw(tag & 0x1F, True), position
+    simple = {0xC0: None, 0xC2: False, 0xC3: True}
+    if tag in simple:
+        return simple[tag], position
+    numbers = {
+        0xCA: "f", 0xCB: "d", 0xCC: "B", 0xCD: "H", 0xCE: "I", 0xCF: "Q",
+        0xD0: "b", 0xD1: "h", 0xD2: "i", 0xD3: "q",
+    }
+    if tag in numbers:
+        return take(numbers[tag]), position
+    if tag in (0xD9, 0xDA, 0xDB):
+        return raw(take({0xD9: "B", 0xDA: "H", 0xDB: "I"}[tag]), True), position
+    if tag in (0xC4, 0xC5, 0xC6):
+        return raw(take({0xC4: "B", 0xC5: "H", 0xC6: "I"}[tag]), False), position
+    if tag in (0xDC, 0xDD):
+        return items(take("H" if tag == 0xDC else "I"), False), position
+    if tag in (0xDE, 0xDF):
+        return items(take("H" if tag == 0xDE else "I"), True), position
+    raise ValueError(f"unsupported MessagePack tag {tag:#x}")
+
+
 class LoomCxxTest(unittest.TestCase):
-    def compile(self, source, *extra, expect_success=True):
+    def compile(self, source, *extra, expect_success=True, name="unit"):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         directory = pathlib.Path(temporary.name)
-        source_path = directory / "unit.cpp"
+        source_path = directory / f"{name}.cpp"
         source_path.write_text(source)
-        object_path = directory / "unit.o"
+        object_path = directory / f"{name}.o"
+        self.object_path = object_path
         command = [
             ARGS.loom_cxx,
             "-c",
@@ -108,7 +286,7 @@ class LoomCxxTest(unittest.TestCase):
             "-MT",
             str(object_path),
             "-MF",
-            str(directory / "unit.d"),
+            str(directory / f"{name}.d"),
             f"--loom-target={ARGS.target}",
             "--loom-register-function=test_register_code_object",
             "--loom-stats",
@@ -123,7 +301,7 @@ class LoomCxxTest(unittest.TestCase):
         if expect_success:
             self.assertEqual(run.returncode, 0, run.stderr)
             elf = Elf(object_path.read_bytes())
-            depfile = (directory / "unit.d").read_text()
+            depfile = (directory / f"{name}.d").read_text()
             return elf, run.stderr, depfile
         self.assertNotEqual(run.returncode, 0, run.stderr)
         self.assertFalse(object_path.exists())
@@ -161,12 +339,17 @@ const loom::kernel::descriptor* host_entry() {
         binding, kind, shndx = symbols["_Z10host_entryv"]
         self.assertEqual((binding, kind), (STB_GLOBAL, STT_FUNC))
         self.assertNotEqual(shndx, SHN_UNDEF)
-        # The kernel descriptor: a weak definition, available.
+        # The kernel descriptor: a local definition, available, naming the
+        # object's own code object.
         binding, kind, shndx = symbols[BODY_REF]
-        self.assertEqual((binding, kind), (STB_WEAK, STT_OBJECT))
+        self.assertEqual((binding, kind), (STB_LOCAL, STT_OBJECT))
         self.assertNotEqual(shndx, SHN_UNDEF)
-        descriptor = elf.contents(elf.sections[shndx])
-        self.assertEqual(struct.unpack_from("<II", descriptor, 0), (1, 1))
+        self.assertNoExportedKernelRefs(elf)
+        descriptor = elf.descriptor(BODY_REF)
+        self.assertEqual((descriptor["version"], descriptor["flags"]), (2, 1))
+        self.assertEqual(descriptor["name"], "run__4Body")
+        self.assertIsNotNone(descriptor["code_object"])
+        self.assertIn("run__4Body", elf.code_object_at(descriptor["code_object"]).amdgpu_kernel_arguments())
         # The embedded device code object and its registration constructor.
         self.assertTrue(self.device_code_objects(elf))
         self.assertGreater(elf.section(".init_array")[5], 0)
@@ -207,12 +390,296 @@ const loom::kernel::descriptor* bad() {
         self.assertIn("dropped 1 launched kernel(s)", stderr)
         self.assertIn("  dropped: ", stderr)
         self.assertIn("preprocess=1 parse=1", stderr)
-        symbols = elf.symbols()
+        self.assertNoExportedKernelRefs(elf)
         for symbol, available in ((BODY_REF, 1), (BAD_REF, 0)):
-            _, _, shndx = symbols[symbol]
-            descriptor = elf.contents(elf.sections[shndx])
-            self.assertEqual(struct.unpack_from("<II", descriptor, 0), (1, available))
+            descriptor = elf.descriptor(symbol)
+            self.assertEqual(
+                (descriptor["version"], descriptor["flags"]),
+                (DESCRIPTOR_VERSION, available),
+            )
+            self.assertEqual(descriptor["code_object"] is not None, bool(available))
+        self.assertEqual(elf.descriptor(BAD_REF)["leaves"], [])
         self.assertTrue(self.device_code_objects(elf))
+
+    def assertNoExportedKernelRefs(self, elf):
+        """Descriptors are local definitions: none exported, none undefined."""
+        references = elf.kernel_ref_symbols()
+        self.assertTrue(references)
+        for name, binding, shndx in references:
+            self.assertEqual(binding, STB_LOCAL, name)
+            self.assertNotEqual(shndx, SHN_UNDEF, name)
+
+    def test_descriptor_offsets_follow_the_compiled_kernel(self):
+        # Sub-word scalars, mixed with pointers and wider scalars. The
+        # descriptor's kernel argument offsets and sizes are those of the
+        # compiled kernel, read back from its code object metadata.
+        elf, _, _ = self.compile(
+            KERNEL_PRELUDE
+            + """
+struct Mixed {
+  char c;
+  short s;
+  bool b;
+  float* y;
+  char c2;
+  double d;
+  int* z;
+  bool b2;
+  unsigned char u;
+  int i;
+  [[loom::inline]] void operator()() const {
+    y[0] = static_cast<float>(c) + static_cast<float>(s) +
+           static_cast<float>(c2) + static_cast<float>(d) + (b ? 1.0f : 0.0f);
+    z[0] = static_cast<int>(u) + i + (b2 ? 1 : 0);
+  }
+};
+const loom::kernel::descriptor* host_entry() {
+  return &loom::kernel::kernel_ref<&run<Mixed>>;
+}
+"""
+        )
+        symbol = "_ZN4loom6kernel10kernel_refIXadL_Z3runI5MixedEvT_EEEE"
+        descriptor = elf.descriptor(symbol)
+        self.assertEqual((descriptor["version"], descriptor["flags"]), (2, 1))
+        self.assertEqual(descriptor["parameter_count"], 1)
+        # (parameter, kind, source offset, kernarg offset, size). Host offsets
+        # are the LP64 record layout; each by-value argument starts on a
+        # 4-byte word of the kernarg segment and sub-word scalars do not pack
+        # together (the importer's old rule put s at 2, b at 4, d at 20, b2
+        # at 40 and u at 41).
+        self.assertEqual(
+            descriptor["leaves"],
+            [
+                (0, 0, 0, 0, 1),
+                (0, 0, 2, 4, 2),
+                (0, 0, 4, 8, 1),
+                (0, 1, 8, 16, 8),
+                (0, 0, 16, 24, 1),
+                (0, 0, 24, 28, 8),
+                (0, 1, 32, 40, 8),
+                (0, 0, 40, 48, 1),
+                (0, 0, 41, 52, 1),
+                (0, 0, 44, 56, 4),
+            ],
+        )
+        self.assertEqual(descriptor["kernarg_size"], 64)
+        # The code object the descriptor names declares the same layout.
+        kernels = elf.code_object_at(descriptor["code_object"]).amdgpu_kernel_arguments()
+        segment_size, arguments = kernels[descriptor["name"]]
+        self.assertEqual(segment_size, descriptor["kernarg_size"])
+        self.assertEqual(
+            [(offset, size) for offset, size, _ in arguments],
+            [(leaf[3], leaf[4]) for leaf in descriptor["leaves"]],
+        )
+        self.assertEqual(
+            [kind for _, _, kind in arguments],
+            [
+                "global_buffer" if leaf[1] == 1 else "by_value"
+                for leaf in descriptor["leaves"]
+            ],
+        )
+
+    def link_and_run(self, objects, main_source):
+        """Links host objects with a C main and runs it; None without a C
+        compiler."""
+        compiler = next(
+            (c for c in ("cc", "gcc", "clang") if shutil.which(c)), None
+        )
+        if compiler is None:
+            return None
+        directory = pathlib.Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, directory, True)
+        main_path = directory / "main.c"
+        main_path.write_text(main_source)
+        program = directory / "program"
+        link = subprocess.run(
+            [compiler, "-no-pie", "-o", str(program), str(main_path)]
+            + [str(o) for o in objects],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            universal_newlines=True,
+        )
+        self.assertEqual(link.returncode, 0, link.stderr)
+        run = subprocess.run(
+            [str(program)], stdout=subprocess.PIPE, universal_newlines=True
+        )
+        self.assertEqual(run.returncode, 0)
+        return run.stdout.split("\n")
+
+    DESCRIPTOR_MAIN = r"""
+#include <stdio.h>
+struct leaf { unsigned parameter, kind, source_offset, kernarg_offset, size; };
+struct descriptor {
+  unsigned version, flags;
+  const char* name;
+  unsigned workgroup_size[3], kernarg_size, parameter_count, leaf_count;
+  const struct leaf* leaves;
+  const void* code_object;
+};
+static const void* images[8];
+static int image_count;
+void test_register_code_object(const void* data, unsigned long size) {
+  (void)size;
+  images[image_count++] = data;
+}
+const struct descriptor* entry_a(void);
+const struct descriptor* entry_b(void);
+static int image(const void* code_object) {
+  for (int i = 0; i < image_count; ++i) if (images[i] == code_object) return i;
+  return -1;
+}
+static void print(const struct descriptor* d) {
+  printf("%s %u %u %d\n", d->name, d->flags, d->leaf_count, image(d->code_object));
+}
+int main(void) {
+  const struct descriptor* a = entry_a();
+  const struct descriptor* b = entry_b();
+  printf("%d %d\n", image_count, a == b);
+  print(a);
+  print(b);
+  return 0;
+}
+"""
+
+    def test_internal_lambda_kernels_keep_their_own_descriptors(self):
+        # Two objects launch lambdas declared in static functions of the same
+        # name. The lambdas have internal linkage and mangle alike, so both
+        # objects reference the same kernel_ref symbol and export name for
+        # different kernels. Each object defines its descriptor locally and
+        # names its own code object, so after linking each launches its own.
+        objects = []
+        refs = []
+        for name, body in (
+            ("a", "y[0] = 1.0f;"),
+            ("b", "y[0] = static_cast<float>(n);"),
+        ):
+            elf, _, _ = self.compile(
+                KERNEL_PRELUDE
+                + f"""
+static const loom::kernel::descriptor* entry(float* y, int n) {{
+  auto body = [=]() {{ {body} }};
+  return &loom::kernel::kernel_ref<&run<decltype(body)>>;
+}}
+extern "C" const loom::kernel::descriptor* entry_{name}() {{
+  return entry(nullptr, 0);
+}}
+""",
+                name=name,
+            )
+            self.assertNoExportedKernelRefs(elf)
+            (ref,) = [r for r, _, _ in elf.kernel_ref_symbols()]
+            refs.append((ref, elf.descriptor(ref)))
+            objects.append(self.object_path)
+        # The same descriptor symbol and export name, different kernels.
+        self.assertEqual(refs[0][0], refs[1][0])
+        self.assertEqual(refs[0][1]["name"], refs[1][1]["name"])
+        self.assertEqual(len(refs[0][1]["leaves"]), 1)
+        self.assertEqual(len(refs[1][1]["leaves"]), 2)
+        output = self.link_and_run(objects, self.DESCRIPTOR_MAIN)
+        if output is None:
+            self.skipTest("no C compiler to link with")
+        name = refs[0][1]["name"]
+        # Two code objects, two descriptors, each naming its own object's.
+        self.assertEqual(output[0], "2 0")
+        a, b = output[1].split(), output[2].split()
+        self.assertEqual(a[:3], [name, "1", "1"])
+        self.assertEqual(b[:3], [name, "1", "2"])
+        self.assertNotEqual(a[3], b[3])
+        self.assertNotIn("-1", (a[3], b[3]))
+
+    SHARED_MAIN = r"""
+#include <stdio.h>
+struct descriptor {
+  unsigned version, flags;
+  const char* name;
+  unsigned workgroup_size[3], kernarg_size, parameter_count, leaf_count;
+  const void* leaves;
+  const void* code_object;
+};
+typedef const struct descriptor* (*reference)(void);
+static const void* images[8];
+static int image_count;
+void test_register_code_object(const void* data, unsigned long size) {
+  (void)size;
+  images[image_count++] = data;
+}
+const struct descriptor* entry_a(void);
+const struct descriptor* entry_b(void);
+reference via_a(void);
+reference via_b(void);
+static int image(const void* code_object) {
+  for (int i = 0; i < image_count; ++i) if (images[i] == code_object) return i;
+  return -1;
+}
+static void print(const struct descriptor* d) {
+  printf("%s %u %u %d\n", d->name, d->flags, d->leaf_count, image(d->code_object));
+}
+int main(void) {
+  printf("%d %d\n", image_count, via_a() == via_b());
+  print(entry_a());
+  print(entry_b());
+  print(via_a()());
+  print(via_b()());
+  return 0;
+}
+"""
+
+    def test_unavailable_and_available_copies_keep_their_own_descriptors(self):
+        # The same kernel is dropped in one object and compiled in another.
+        # Each object's launches use its own descriptor, whatever the link
+        # order, also through an inline function both objects define (which
+        # loom-cxx makes local rather than leaving one copy to the linker).
+        objects = []
+        for name, body in (
+            ("a", "if (y != nullptr) y[0] = 2.0f;"),  # rejected: dropped
+            ("b", "y[0] = 2.0f;"),
+        ):
+            elf, _, _ = self.compile(
+                KERNEL_PRELUDE
+                + f"""
+struct Shared {{
+  float* y;
+  [[loom::inline]] void operator()() const {{ {body} }}
+}};
+inline const loom::kernel::descriptor* shared_ref() {{
+  return &loom::kernel::kernel_ref<&run<Shared>>;
+}}
+using reference = const loom::kernel::descriptor* (*)();
+const loom::kernel::descriptor* other_{name}() {{
+  return &loom::kernel::kernel_ref<&run<Body>>;
+}}
+extern "C" const loom::kernel::descriptor* entry_{name}() {{
+  return &loom::kernel::kernel_ref<&run<Shared>>;
+}}
+extern "C" reference via_{name}() {{ return &shared_ref; }}
+""",
+                "--loom-drop-failed-kernels",
+                name=name,
+            )
+            objects.append(self.object_path)
+            self.assertNoExportedKernelRefs(elf)
+            self.assertEqual(
+                [
+                    (symbol, binding)
+                    for symbol, (binding, _, _) in elf.symbols().items()
+                    if "shared_ref" in symbol and binding != STB_LOCAL
+                ],
+                [],
+            )
+        shared = "_ZN4loom6kernel10kernel_refIXadL_Z3runI6SharedEvT_EEEE"
+        for path, available in zip(objects, (0, 1)):
+            elf = Elf(path.read_bytes())
+            self.assertEqual(elf.descriptor(shared)["flags"], available)
+        for order in (objects, objects[::-1]):
+            output = self.link_and_run(order, self.SHARED_MAIN)
+            if output is None:
+                self.skipTest("no C compiler to link with")
+            self.assertEqual(output[0].split()[1], "0")  # two shared_ref copies
+            for a, b in ((output[1], output[2]), (output[3], output[4])):
+                a, b = a.split(), b.split()
+                self.assertEqual(a[:4], ["run__6Shared", "0", "0", "-1"])
+                self.assertEqual(b[:3], ["run__6Shared", "1", "1"])
+                self.assertNotEqual(b[3], "-1")
 
     def test_host_errors_are_compile_errors(self):
         _, stderr, _ = self.compile(
