@@ -167,3 +167,71 @@ low.func.def public target<amdgpu.gfx11.generic.core>(@target) @entry(%value: re
   %result = low.func.call @increment(%value) : (reg<amdgpu.vgpr>) -> (reg<amdgpu.vgpr>)
   return %result
 }
+
+// ====
+
+// A helper that reads the workgroup size expands into its caller: only a
+// kernel's launch configuration makes that size exact, so a retained native
+// helper could not lower the query. A helper reading only the work-item id
+// stays retained.
+amdgpu.target<gfx11-generic> @target
+
+func.def target(@target) @width() -> (index) {
+  %width = kernel.workgroup.size<x> : index
+  func.return %width : index
+}
+
+func.def target(@target) @lane() -> (index) {
+  %lane = kernel.workitem.id<x> : index
+  func.return %lane : index
+}
+
+func.def public target(@target) @entry() -> (index, index) {
+  %width = func.call @width() : () -> (index)
+  %lane = func.call @lane() : () -> (index)
+  func.return %width, %lane : index, index
+}
+
+// ----
+amdgpu.target<gfx11-generic> @target
+
+func.def target(@target) @lane() -> (index) {
+  %lane = kernel.workitem.id<x> : index
+  func.return %lane : index
+}
+
+func.def public target(@target) @entry() -> (index, index) {
+  %width = kernel.workgroup.size<x> : index
+  %lane = func.call @lane() : () -> (index)
+  func.return %width, %lane : index, index
+}
+
+// ====
+
+// The query can also reach a helper through a callee that expands into it.
+amdgpu.target<gfx11-generic> @target
+
+func.def target(@target) @width() -> (index) {
+  %width = kernel.workgroup.size<x> : index
+  func.return %width : index
+}
+
+func.def target(@target) @scaled(%value: index) -> (index) {
+  %width = func.call @width() : () -> (index)
+  %scaled = index.mul %value, %width : index
+  func.return %scaled : index
+}
+
+func.def public target(@target) @entry(%value: index) -> (index) {
+  %scaled = func.call @scaled(%value) : (index) -> (index)
+  func.return %scaled : index
+}
+
+// ----
+amdgpu.target<gfx11-generic> @target
+
+func.def public target(@target) @entry(%value: index) -> (index) {
+  %width = kernel.workgroup.size<x> : index
+  %scaled = index.mul %value, %width : index
+  func.return %scaled : index
+}
