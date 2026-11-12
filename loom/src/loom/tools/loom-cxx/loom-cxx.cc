@@ -30,11 +30,12 @@
 //      host references is defined in the host module with internal linkage,
 //      so the object exports no kernel_ref symbol and each object's launches
 //      resolve to its own descriptors and its own code object
-//      (loomcxx/kernel_ref.h). A descriptor combines the importer's host
-//      leaves (source offsets and sizes in the host object) with the kernel
-//      argument layout that the device compiler reports for the compiled
-//      kernel in its artifact manifest, and names the kernel by the ordinal
-//      of its export in the code object. Descriptors of kernels without
+//      (loomcxx/kernel_ref.h). A descriptor names the kernel by the ordinal
+//      of its export in the code object, and points to a host function, local
+//      to the object, that packs the kernel arguments: it combines the
+//      importer's host leaves (source offsets and sizes in the host objects)
+//      with the kernel argument layout that the device compiler reports for
+//      the compiled kernel in its artifact manifest. Descriptors of kernels without
 //      device code are defined without their available flag, so launching
 //      them fails at run time instead of at link time. The module is emitted
 //      as one object file.
@@ -44,10 +45,12 @@
 #include <cxx/preprocessor.h>
 #include <cxx/toolchain.h>
 #include <cxx/translation_unit.h>
+#include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/Constants.h>
 #include <llvm/IR/DerivedTypes.h>
 #include <llvm/IR/Function.h>
 #include <llvm/IR/GlobalVariable.h>
+#include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/Instruction.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Module.h>
@@ -106,10 +109,10 @@ constexpr std::string_view kTool = "loom-cxx";
 constexpr std::string_view kKernelRefPrefix = "_ZN4loom6kernel10kernel_ref";
 // Rounds of compile-rejection exclusion before a device pass gives up.
 constexpr int kMaxDeviceRounds = 5;
-// loom::kernel::descriptor_version and descriptor_leaf_* in
-// loomcxx/kernel_ref.h.
+// loom::kernel::descriptor_version in loomcxx/kernel_ref.h.
 constexpr uint32_t kDescriptorVersion = 3;
-constexpr uint32_t kDescriptorLeafBuffer = 1;
+// KernelLaunchLeaf::kind of a device pointer passed as a buffer binding.
+constexpr uint32_t kLeafBuffer = 1;
 
 struct Options {
   std::string source;
@@ -744,6 +747,17 @@ class Driver {
                                    std::string_view log);
   void embed_device_code();
   void define_kernel_descriptors(llvm::GlobalVariable* code_object);
+  // One kernel argument a packing function copies: |length| bytes from
+  // |source_offset| in host parameter object |parameter| to |kernarg_offset|.
+  struct ArgumentCopy {
+    uint32_t parameter;
+    uint64_t source_offset;
+    uint64_t kernarg_offset;
+    uint64_t length;
+  };
+  llvm::Function* define_packing_function(
+      const std::vector<ArgumentCopy>& copies, uint64_t kernarg_size,
+      uint32_t parameter_count, size_t index);
   void localize_descriptor_users(
       const std::vector<llvm::GlobalVariable*>& descriptors);
   void emit_object();
@@ -1494,10 +1508,10 @@ void Driver::embed_device_code() {
 // Defines every kernel_ref descriptor the host module references, in the
 // module, with internal linkage (layout in loomcxx/kernel_ref.h). A kernel is
 // available when the importer imported it and the device compiler compiled
-// it; its leaves take their kernel argument offsets and payload sizes from
-// the compiled kernel's layout, and the descriptor names this object's code
-// object record and the kernel's export ordinal in it. Other references get
-// descriptors without the available flag.
+// it; its descriptor names this object's code object record and the kernel's
+// export ordinal there, and points to a packing function for the compiled
+// kernel's argument layout. Other references get descriptors without the
+// available flag.
 void Driver::define_kernel_descriptors(llvm::GlobalVariable* code_object) {
   if (kernel_refs_.empty()) {
     return;
@@ -1505,10 +1519,9 @@ void Driver::define_kernel_descriptors(llvm::GlobalVariable* code_object) {
   auto& context = host_module_->getContext();
   auto* i32 = llvm::Type::getInt32Ty(context);
   auto* pointer = llvm::PointerType::getUnqual(context);
-  auto* leaf_type = llvm::StructType::get(context, {i32, i32, i32, i32, i32});
   auto* descriptor_type = llvm::StructType::get(
       context, {i32, i32, pointer, llvm::ArrayType::get(i32, 3), i32, i32, i32,
-                i32, pointer, pointer});
+                pointer, pointer});
   auto u32 = [&](uint64_t value) -> llvm::Constant* {
     return llvm::ConstantInt::get(i32, value);
   };
@@ -1554,10 +1567,10 @@ void Driver::define_kernel_descriptors(llvm::GlobalVariable* code_object) {
     name_global->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
 
     std::array<llvm::Constant*, 3> workgroup_size = {u32(0), u32(0), u32(0)};
-    llvm::Constant* leaves = llvm::ConstantPointerNull::get(pointer);
+    llvm::Constant* pack = llvm::ConstantPointerNull::get(pointer);
     llvm::Constant* code_object_reference =
         llvm::ConstantPointerNull::get(pointer);
-    uint64_t segment_size = 0, parameter_count = 0, leaf_count = 0;
+    uint64_t segment_size = 0, parameter_count = 0;
     if (layout) {
       // Leaf i is argument i of the compiled kernel.
       if (layout->arguments.size() != launch->leaves.size()) {
@@ -1566,17 +1579,18 @@ void Driver::define_kernel_descriptors(llvm::GlobalVariable* code_object) {
                          launch->export_name, layout->arguments.size(),
                          launch->leaves.size()));
       }
-      std::vector<llvm::Constant*> rows;
+      std::vector<ArgumentCopy> copies;
       for (size_t i = 0; i < launch->leaves.size(); ++i) {
         const auto& leaf = launch->leaves[i];
         const auto& argument = layout->arguments[i];
-        const bool buffer = leaf.kind == kDescriptorLeafBuffer;
+        const bool buffer = leaf.kind == kLeafBuffer;
         // A buffer argument carries the host pointer; a by-value argument
         // carries its payload, the low-address bytes of the host object.
         if (!argument.present || argument.buffer != buffer ||
             argument.length > leaf.size ||
             (buffer && argument.length != leaf.size) ||
-            argument.offset + argument.length > layout->segment_size) {
+            argument.offset + argument.length > layout->segment_size ||
+            leaf.parameter >= launch->parameter_count) {
           fail(symbol,
                std::format("argument {} of '{}' (offset {}, {} bytes{}) does "
                            "not hold the host leaf ({} bytes{})",
@@ -1584,35 +1598,39 @@ void Driver::define_kernel_descriptors(llvm::GlobalVariable* code_object) {
                            argument.length, argument.buffer ? ", buffer" : "",
                            leaf.size, buffer ? ", pointer" : ""));
         }
-        rows.push_back(llvm::ConstantStruct::get(
-            leaf_type, {u32(leaf.parameter), u32(leaf.kind),
-                        u32(leaf.source_offset), u32(argument.offset),
-                        u32(argument.length)}));
+        copies.push_back({leaf.parameter, leaf.source_offset, argument.offset,
+                          argument.length});
       }
-      if (!rows.empty()) {
-        auto* table_type = llvm::ArrayType::get(leaf_type, rows.size());
-        auto* table = new llvm::GlobalVariable(
-            *host_module_, table_type, /*isConstant=*/true,
-            llvm::GlobalValue::PrivateLinkage,
-            llvm::ConstantArray::get(table_type, rows),
-            std::format("__loom_cxx_kernel_leaves.{}", index));
-        table->setAlignment(llvm::Align(4));
-        leaves = table;
+      // Arguments must not overlap: the kernarg bytes no argument covers are
+      // zeroed.
+      std::vector<ArgumentCopy> sorted = copies;
+      std::sort(sorted.begin(), sorted.end(), [](const auto& a, const auto& b) {
+        return a.kernarg_offset < b.kernarg_offset;
+      });
+      for (size_t i = 1; i < sorted.size(); ++i) {
+        if (sorted[i - 1].kernarg_offset + sorted[i - 1].length >
+            sorted[i].kernarg_offset) {
+          fail(symbol, std::format("kernel arguments of '{}' overlap at "
+                                   "kernarg offset {}",
+                                   launch->export_name,
+                                   sorted[i].kernarg_offset));
+        }
       }
+      pack = define_packing_function(copies, layout->segment_size,
+                                     launch->parameter_count, index);
       for (size_t i = 0; i < 3; ++i) {
         workgroup_size[i] = u32(launch->workgroup_size[i]);
       }
       segment_size = layout->segment_size;
       parameter_count = launch->parameter_count;
-      leaf_count = rows.size();
       code_object_reference = code_object;
     }
     auto* initializer = llvm::ConstantStruct::get(
         descriptor_type,
         {u32(kDescriptorVersion), u32(layout ? 1 : 0), name_global,
          llvm::ConstantArray::get(llvm::ArrayType::get(i32, 3), workgroup_size),
-         u32(segment_size), u32(parameter_count), u32(leaf_count),
-         u32(export_ordinal), leaves, code_object_reference});
+         u32(segment_size), u32(parameter_count), u32(export_ordinal),
+         code_object_reference, pack});
     // A local definition replaces the external declaration: no kernel_ref
     // symbol leaves the object, and no other object's descriptor can
     // satisfy (or replace) this object's references.
@@ -1626,6 +1644,94 @@ void Driver::define_kernel_descriptors(llvm::GlobalVariable* code_object) {
     descriptors.push_back(descriptor);
   }
   localize_descriptor_users(descriptors);
+}
+
+// Defines the loom::kernel::pack_function of one compiled kernel, with
+// internal linkage: void(void* kernarg, const void* const* parameters). It
+// writes all |kernarg_size| bytes of the kernel argument segment at |kernarg|:
+// each argument's payload from its host parameter object, in pieces of at
+// most 8 bytes with unaligned loads and stores, and zeros in every byte no
+// argument covers, including the rest of the slot of a sub-word scalar. It
+// reads only its arguments and references nothing else, no device code in
+// particular.
+llvm::Function* Driver::define_packing_function(
+    const std::vector<ArgumentCopy>& copies, uint64_t kernarg_size,
+    uint32_t parameter_count, size_t index) {
+  auto& context = host_module_->getContext();
+  auto* pointer = llvm::PointerType::getUnqual(context);
+  auto* function = llvm::Function::Create(
+      llvm::FunctionType::get(llvm::Type::getVoidTy(context),
+                              {pointer, pointer}, /*isVarArg=*/false),
+      llvm::GlobalValue::InternalLinkage,
+      std::format("__loom_cxx_pack.{}", index), *host_module_);
+  function->addFnAttr(llvm::Attribute::NoUnwind);
+  function->addFnAttr(llvm::Attribute::NoRecurse);
+  function->addFnAttr(llvm::Attribute::WillReturn);
+  llvm::Value* kernarg = function->getArg(0);
+  llvm::Value* parameters = function->getArg(1);
+  kernarg->setName("kernarg");
+  parameters->setName("parameters");
+  llvm::IRBuilder<> builder(
+      llvm::BasicBlock::Create(context, "entry", function));
+  auto* i8 = builder.getInt8Ty();
+  auto at = [&](llvm::Value* base, uint64_t offset) -> llvm::Value* {
+    return offset ? builder.CreateConstInBoundsGEP1_64(i8, base, offset)
+                  : base;
+  };
+  // Pieces of 8, 4, 2 and 1 bytes covering [offset, offset + length).
+  auto pieces = [](uint64_t offset, uint64_t length, auto&& piece) {
+    for (uint64_t end = offset + length; offset < end;) {
+      unsigned bytes = 8;
+      while (bytes > end - offset) {
+        bytes /= 2;
+      }
+      piece(offset, bytes);
+      offset += bytes;
+    }
+  };
+  const auto& data_layout = host_module_->getDataLayout();
+  const uint64_t pointer_size = data_layout.getPointerSize();
+  std::vector<llvm::Value*> sources(parameter_count, nullptr);
+  auto source = [&](uint32_t parameter) {
+    if (!sources[parameter]) {
+      sources[parameter] = builder.CreateAlignedLoad(
+          pointer, at(parameters, parameter * pointer_size),
+          data_layout.getPointerABIAlignment(0),
+          std::format("parameter{}", parameter));
+    }
+    return sources[parameter];
+  };
+  std::vector<std::pair<uint64_t, uint64_t>> covered;
+  for (const auto& copy : copies) {
+    llvm::Value* from = source(copy.parameter);
+    pieces(copy.kernarg_offset, copy.length, [&](uint64_t offset,
+                                                 unsigned bytes) {
+      auto* type = builder.getIntNTy(8 * bytes);
+      const uint64_t source_offset =
+          copy.source_offset + (offset - copy.kernarg_offset);
+      auto* value = builder.CreateAlignedLoad(
+          type, at(from, source_offset), llvm::Align(1));
+      builder.CreateAlignedStore(value, at(kernarg, offset), llvm::Align(1));
+    });
+    covered.emplace_back(copy.kernarg_offset, copy.length);
+  }
+  std::sort(covered.begin(), covered.end());
+  uint64_t next = 0;
+  auto zero = [&](uint64_t offset, unsigned bytes) {
+    builder.CreateAlignedStore(builder.getIntN(8 * bytes, 0),
+                               at(kernarg, offset), llvm::Align(1));
+  };
+  for (const auto& [offset, length] : covered) {
+    if (offset > next) {
+      pieces(next, offset - next, zero);
+    }
+    next = std::max(next, offset + length);
+  }
+  if (kernarg_size > next) {
+    pieces(next, kernarg_size - next, zero);
+  }
+  builder.CreateRetVoid();
+  return function;
 }
 
 // Gives local linkage to every mergeable (inline, template) definition that

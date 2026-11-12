@@ -19,14 +19,14 @@ namespace loom::cxx_import {
 // how they flatten into the imported kernel's argument list. The native
 // argument layout (kernel argument offsets and the argument segment size) is
 // not here: the target lowering that compiles the kernel decides it, and the
-// compiled artifact reports it (see loomcxx/kernel_ref.h).
+// compiled artifact reports it. loom-cxx combines both into each kernel's
+// argument packing function (loomcxx/kernel_ref.h).
 
 // One kernel argument copied from a host parameter object.
 struct KernelLaunchLeaf {
   // Kernel parameter whose host object holds the leaf.
   uint32_t parameter;
-  // loom::kernel::descriptor_leaf_scalar (0): by-value bytes, or
-  // descriptor_leaf_buffer (1): a device pointer passed as a buffer binding.
+  // 0: by-value bytes, or 1: a device pointer passed as a buffer binding.
   uint32_t kind;
   // Byte offset of the leaf in the host parameter object.
   uint64_t source_offset;

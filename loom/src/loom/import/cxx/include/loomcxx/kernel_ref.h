@@ -24,39 +24,31 @@
 // embedded_code_object record the first time it launches one of its kernels.
 // The kernel argument layout comes from the compiled kernel.
 //
-// To launch, a host zero-fills |kernarg_size| bytes, copies each leaf's
-// |size| bytes from |source_offset| in the parameter object to
-// |kernarg_offset|, and dispatches export |export_ordinal| of the executable
-// it loaded from |code_object| with that buffer as the kernel's explicit
-// arguments.
+// To launch, a host calls the descriptor's |pack| function to write the
+// kernel's explicit argument segment, |kernarg_size| bytes, from the kernel's
+// host parameter objects, and dispatches export |export_ordinal| of the
+// executable it loaded from |code_object| with that buffer as the kernel's
+// explicit arguments.
 //
 // This header has no other dependencies so that host code can include it.
 
 namespace loom::kernel {
 
-// One kernel ABI argument, copied from a host parameter object.
-struct descriptor_leaf {
-  // Kernel parameter whose object holds the leaf.
-  unsigned int parameter;
-  // descriptor_leaf_scalar: by-value bytes. descriptor_leaf_buffer: a device
-  // pointer, which Loom passes as a buffer binding.
-  unsigned int kind;
-  // Byte offset of the leaf in the host parameter object.
-  unsigned int source_offset;
-  // Byte offset of the argument in the explicit kernel argument segment, as
-  // the compiled kernel reads it.
-  unsigned int kernarg_offset;
-  // Bytes copied from the leaf to the argument: the argument's payload. A
-  // by-value argument narrower than its kernel argument slot (char, short,
-  // bool) occupies the slot's low-address bytes.
-  unsigned int size;
-};
+// Writes the explicit kernel argument segment of a compiled kernel: all of
+// its descriptor's |kernarg_size| bytes at |kernarg|, from the kernel's host
+// parameter objects, |parameters|[0..parameter_count). loom-cxx generates one
+// per available kernel from the kernel argument layout the device compiler
+// chose, with internal linkage. It copies each argument's payload: a device
+// pointer for a buffer, or the low-address bytes of a by-value scalar (a
+// char, short or bool occupies the low bytes of a wider argument slot). Every
+// byte no argument covers, such as the rest of such a slot, is zeroed. It
+// needs no particular alignment of |kernarg| or of the parameter objects.
+using pack_function = void (*)(void* kernarg, const void* const* parameters);
 
-inline constexpr unsigned int descriptor_leaf_scalar = 0;
-inline constexpr unsigned int descriptor_leaf_buffer = 1;
-
-// Version 3 names the kernel by its export ordinal instead of by name, and its
-// code object by an embedded_code_object record that a runtime loads lazily.
+// Version 3 names the kernel by its export ordinal instead of by name and its
+// code object by an embedded_code_object record that a runtime loads lazily,
+// and packs kernel arguments with a generated pack_function instead of a
+// table of leaves.
 inline constexpr unsigned int descriptor_version = 3;
 // The kernel was imported. Without it the importer reached the kernel_ref but
 // dropped or excluded the kernel, and the descriptor names no device code.
@@ -92,19 +84,18 @@ struct descriptor {
   unsigned int workgroup_size[3];
   // Byte size of the compiled kernel's explicit kernel argument segment.
   unsigned int kernarg_size;
-  // Number of kernel parameters.
+  // Number of kernel parameters: host parameter objects |pack| reads.
   unsigned int parameter_count;
-  // Number of entries in |leaves|, in kernel argument order.
-  unsigned int leaf_count;
   // Ordinal of the kernel's export in |code_object|: its index among the
   // code object's kernels, in the order a loader numbers them (for an AMDGPU
   // code object, the order of its amdhsa.kernels metadata). Zero when the
   // kernel is unavailable.
   unsigned int export_ordinal;
-  const descriptor_leaf* leaves;
   // The code object that exports the kernel: the object's embedded code
   // object. Null when the kernel is unavailable.
   const embedded_code_object* code_object;
+  // Packs the kernel arguments. Null when the kernel is unavailable.
+  pack_function pack;
 };
 
 // The descriptor of kernel K. Odr-use it, for example by taking its address,

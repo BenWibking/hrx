@@ -185,20 +185,10 @@ class Elf:
         relocations = self.relocations(shndx)
         (version, flags) = struct.unpack("<II", self.read(shndx, value, 8))
         wg = struct.unpack("<III", self.read(shndx, value + 16, 12))
-        kernarg_size, parameter_count, leaf_count, export_ordinal = struct.unpack(
-            "<IIII", self.read(shndx, value + 28, 16)
+        kernarg_size, parameter_count, export_ordinal = struct.unpack(
+            "<III", self.read(shndx, value + 28, 12)
         )
         name = relocations.get(value + 8)
-        leaves = relocations.get(value + 48)
-        code_object = relocations.get(value + 56)
-        leaf_rows = []
-        if leaves:
-            for i in range(leaf_count):
-                leaf_rows.append(
-                    struct.unpack(
-                        "<IIIII", self.read(leaves[0], leaves[1] + 20 * i, 20)
-                    )
-                )
         return {
             "version": version,
             "flags": flags,
@@ -207,9 +197,17 @@ class Elf:
             "kernarg_size": kernarg_size,
             "parameter_count": parameter_count,
             "export_ordinal": export_ordinal,
-            "leaves": leaf_rows,
-            "code_object": code_object,
+            "code_object": relocations.get(value + 40),
+            "pack": relocations.get(value + 48),
         }
+
+    def function_at(self, location):
+        """(name, binding) of the function symbol defined at (section,
+        offset), or None."""
+        for name, binding, kind, shndx, value in self.symbol_table():
+            if kind == STT_FUNC and (shndx, value) == tuple(location):
+                return name, binding
+        return None
 
     def code_object_record(self, location):
         """The loom::kernel::embedded_code_object at (section, offset)."""
@@ -482,7 +480,7 @@ const loom::kernel::descriptor* bad() {
                 (DESCRIPTOR_VERSION, available),
             )
             self.assertEqual(descriptor["code_object"] is not None, bool(available))
-        self.assertEqual(elf.descriptor(BAD_REF)["leaves"], [])
+        self.assertIsNone(elf.descriptor(BAD_REF)["pack"])
         self.assertTrue(self.device_code_objects(elf))
 
     def test_export_ordinals_number_the_code_object_exports(self):
@@ -568,10 +566,35 @@ const loom::kernel::descriptor* bad() {
             self.assertEqual(binding, STB_LOCAL, name)
             self.assertNotEqual(shndx, SHN_UNDEF, name)
 
-    def test_descriptor_offsets_follow_the_compiled_kernel(self):
+    PACK_MAIN = r"""
+#include <stdio.h>
+#include <string.h>
+struct descriptor {
+  unsigned version, flags;
+  const char* name;
+  unsigned workgroup_size[3], kernarg_size, parameter_count, export_ordinal;
+  const void* code_object;
+  void (*pack)(void* kernarg, const void* const* parameters);
+};
+const struct descriptor* mixed_entry(void);
+int main(void) {
+  const struct descriptor* d = mixed_entry();
+  unsigned char parameter[48];
+  for (int i = 0; i < 48; ++i) parameter[i] = (unsigned char)(i + 1);
+  unsigned char kernarg[80];
+  memset(kernarg, 0xaa, sizeof kernarg);
+  const void* parameters[1] = {parameter};
+  d->pack(kernarg, parameters);
+  for (unsigned i = 0; i < sizeof kernarg; ++i) printf("%02x", kernarg[i]);
+  printf("\n");
+  return 0;
+}
+"""
+
+    def test_packing_function_follows_the_compiled_kernel(self):
         # Sub-word scalars, mixed with pointers and wider scalars. The
-        # descriptor's kernel argument offsets and sizes are those of the
-        # compiled kernel, read back from its code object metadata.
+        # descriptor's packing function writes the kernel arguments where the
+        # compiled kernel reads them, as its code object metadata declares.
         elf, _, _ = self.compile(
             KERNEL_PRELUDE
             + """
@@ -592,7 +615,7 @@ struct Mixed {
     z[0] = static_cast<int>(u) + i + (b2 ? 1 : 0);
   }
 };
-const loom::kernel::descriptor* host_entry() {
+extern "C" const loom::kernel::descriptor* mixed_entry() {
   return &loom::kernel::kernel_ref<&run<Mixed>>;
 }
 """
@@ -601,42 +624,43 @@ const loom::kernel::descriptor* host_entry() {
         descriptor = elf.descriptor(symbol)
         self.assertEqual((descriptor["version"], descriptor["flags"]), (3, 1))
         self.assertEqual(descriptor["parameter_count"], 1)
-        # (parameter, kind, source offset, kernarg offset, size). Host offsets
-        # are the LP64 record layout; each by-value argument starts on a
-        # 4-byte word of the kernarg segment and sub-word scalars do not pack
-        # together (the importer's old rule put s at 2, b at 4, d at 20, b2
-        # at 40 and u at 41).
-        self.assertEqual(
-            descriptor["leaves"],
-            [
-                (0, 0, 0, 0, 1),
-                (0, 0, 2, 4, 2),
-                (0, 0, 4, 8, 1),
-                (0, 1, 8, 16, 8),
-                (0, 0, 16, 24, 1),
-                (0, 0, 24, 28, 8),
-                (0, 1, 32, 40, 8),
-                (0, 0, 40, 48, 1),
-                (0, 0, 41, 52, 1),
-                (0, 0, 44, 56, 4),
-            ],
-        )
         self.assertEqual(descriptor["kernarg_size"], 64)
-        # The code object the descriptor names declares the same layout.
+        # The compiled kernel's layout: each by-value argument starts on a
+        # 4-byte word of the kernarg segment and sub-word scalars do not pack
+        # together.
         kernels = elf.code_object(descriptor).amdgpu_kernel_arguments()
         segment_size, arguments = kernels[descriptor["name"]]
         self.assertEqual(segment_size, descriptor["kernarg_size"])
         self.assertEqual(
-            [(offset, size) for offset, size, _ in arguments],
-            [(leaf[3], leaf[4]) for leaf in descriptor["leaves"]],
-        )
-        self.assertEqual(
-            [kind for _, _, kind in arguments],
+            [(offset, size, kind) for offset, size, kind in arguments],
             [
-                "global_buffer" if leaf[1] == 1 else "by_value"
-                for leaf in descriptor["leaves"]
+                (0, 1, "by_value"),
+                (4, 2, "by_value"),
+                (8, 1, "by_value"),
+                (16, 8, "global_buffer"),
+                (24, 1, "by_value"),
+                (28, 8, "by_value"),
+                (40, 8, "global_buffer"),
+                (48, 1, "by_value"),
+                (52, 1, "by_value"),
+                (56, 4, "by_value"),
             ],
         )
+        # The packing function is host code local to the object.
+        self.assertEqual(elf.function_at(descriptor["pack"])[1], STB_LOCAL)
+        # Run it on a host object (LP64 layout of Mixed) whose bytes are 1, 2,
+        # 3, ..., into a buffer of 0xaa bytes: each argument gets its payload
+        # from its field, every other byte of the segment is zero (the rest
+        # of a sub-word scalar's slot included), and nothing past it changes.
+        output = self.link_and_run([self.object_path], self.PACK_MAIN)
+        if output is None:
+            self.skipTest("no C compiler to link with")
+        host_offsets = [0, 2, 4, 8, 16, 24, 32, 40, 41, 44]
+        parameter = bytes(range(1, 49))
+        expected = bytearray(segment_size)
+        for (offset, size, _), source in zip(arguments, host_offsets):
+            expected[offset : offset + size] = parameter[source : source + size]
+        self.assertEqual(output[0], (bytes(expected) + b"\xaa" * 16).hex())
 
     def link_and_run(self, objects, main_source):
         """Links host objects with a C main and runs it; None without a C
@@ -690,19 +714,17 @@ static int code_object(const struct code_object* c) {
 """
 
     DESCRIPTOR_MAIN = CODE_OBJECTS_C + r"""
-struct leaf { unsigned parameter, kind, source_offset, kernarg_offset, size; };
 struct descriptor {
   unsigned version, flags;
   const char* name;
-  unsigned workgroup_size[3], kernarg_size, parameter_count, leaf_count;
-  unsigned export_ordinal;
-  const struct leaf* leaves;
+  unsigned workgroup_size[3], kernarg_size, parameter_count, export_ordinal;
   const struct code_object* code_object;
+  void (*pack)(void* kernarg, const void* const* parameters);
 };
 const struct descriptor* entry_a(void);
 const struct descriptor* entry_b(void);
 static void print(const struct descriptor* d) {
-  printf("%s %u %u %d\n", d->name, d->flags, d->leaf_count, code_object(d->code_object));
+  printf("%s %u %u %d\n", d->name, d->flags, d->kernarg_size, code_object(d->code_object));
 }
 int main(void) {
   const struct descriptor* a = entry_a();
@@ -722,6 +744,7 @@ int main(void) {
         # names its own code object, so after linking each launches its own.
         objects = []
         refs = []
+        elves = []
         for name, body in (
             ("a", "y[0] = 1.0f;"),
             ("b", "y[0] = static_cast<float>(n);"),
@@ -742,30 +765,35 @@ extern "C" const loom::kernel::descriptor* entry_{name}() {{
             self.assertNoExportedKernelRefs(elf)
             (ref,) = [r for r, _, _ in elf.kernel_ref_symbols()]
             refs.append((ref, elf.descriptor(ref)))
+            elves.append(elf)
             objects.append(self.object_path)
         # The same descriptor symbol and export name, different kernels.
         self.assertEqual(refs[0][0], refs[1][0])
         self.assertEqual(refs[0][1]["name"], refs[1][1]["name"])
-        self.assertEqual(len(refs[0][1]["leaves"]), 1)
-        self.assertEqual(len(refs[1][1]["leaves"]), 2)
+        arguments = [
+            len(elf.code_object(d).amdgpu_kernel_arguments()[d["name"]][1])
+            for elf, d in ((elves[0], refs[0][1]), (elves[1], refs[1][1]))
+        ]
+        self.assertEqual(arguments, [1, 2])
         output = self.link_and_run(objects, self.DESCRIPTOR_MAIN)
         if output is None:
             self.skipTest("no C compiler to link with")
         name = refs[0][1]["name"]
         # Two code objects, two descriptors, each naming its own object's.
+        sizes = [str(d["kernarg_size"]) for _, d in refs]
+        self.assertNotEqual(sizes[0], sizes[1])
         a, b = output[0].split(), output[1].split()
-        self.assertEqual(a, [name, "1", "1", "0"])
-        self.assertEqual(b, [name, "1", "2", "1"])
+        self.assertEqual(a, [name, "1", sizes[0], "0"])
+        self.assertEqual(b, [name, "1", sizes[1], "1"])
         self.assertEqual(output[2], "2 0")
 
     SHARED_MAIN = CODE_OBJECTS_C + r"""
 struct descriptor {
   unsigned version, flags;
   const char* name;
-  unsigned workgroup_size[3], kernarg_size, parameter_count, leaf_count;
-  unsigned export_ordinal;
-  const void* leaves;
+  unsigned workgroup_size[3], kernarg_size, parameter_count, export_ordinal;
   const struct code_object* code_object;
+  void (*pack)(void* kernarg, const void* const* parameters);
 };
 typedef const struct descriptor* (*reference)(void);
 const struct descriptor* entry_a(void);
@@ -773,7 +801,7 @@ const struct descriptor* entry_b(void);
 reference via_a(void);
 reference via_b(void);
 static void print(const struct descriptor* d) {
-  printf("%s %u %u %d\n", d->name, d->flags, d->leaf_count, code_object(d->code_object));
+  printf("%s %u %u %d\n", d->name, d->flags, d->kernarg_size, code_object(d->code_object));
 }
 int main(void) {
   printf("references %d\n", via_a() == via_b());
@@ -831,6 +859,7 @@ extern "C" reference via_{name}() {{ return &shared_ref; }}
         for path, available in zip(objects, (0, 1)):
             elf = Elf(path.read_bytes())
             self.assertEqual(elf.descriptor(shared)["flags"], available)
+        size = str(elf.descriptor(shared)["kernarg_size"])
         for order in (objects, objects[::-1]):
             output = self.link_and_run(order, self.SHARED_MAIN)
             if output is None:
@@ -839,7 +868,7 @@ extern "C" reference via_{name}() {{ return &shared_ref; }}
             for a, b in ((output[1], output[2]), (output[3], output[4])):
                 a, b = a.split(), b.split()
                 self.assertEqual(a[:4], ["_Z3runI6SharedEvT_", "0", "0", "-1"])
-                self.assertEqual(b, ["_Z3runI6SharedEvT_", "1", "1", "0"])
+                self.assertEqual(b, ["_Z3runI6SharedEvT_", "1", size, "0"])
 
     def test_host_object_does_not_depend_on_import_order(self):
         # The importer translates range-based for statements without changing
