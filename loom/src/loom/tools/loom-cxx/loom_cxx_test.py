@@ -495,6 +495,48 @@ const loom::kernel::descriptor* bad() {
         self.assertIsNone(elf.descriptor(BAD_REF)["pack"])
         self.assertTrue(self.device_code_objects(elf))
 
+    def test_compile_rejected_kernels_are_excluded_and_retried(self):
+        # The importer admits Big, but its private array exceeds the device's
+        # scratch limit, so the device compiler rejects it. The driver
+        # excludes the kernel, imports and compiles again, and keeps Body.
+        big_ref = "_ZN4loom6kernel10kernel_refIXadL_Z3runI3BigEvT_EEEE"
+        source = (
+            KERNEL_PRELUDE
+            + """
+struct Big {
+  float* y;
+  [[loom::inline]] void operator()() const {
+    float scratch[40000];
+    for (unsigned k = 0; k < 40000; ++k) scratch[k] = y[k];
+    unsigned i = static_cast<unsigned>(loom::kernel::workitem::id.x);
+    y[0] = scratch[(i * 7u) % 40000u];
+  }
+};
+const loom::kernel::descriptor* good() {
+  return &loom::kernel::kernel_ref<&run<Body>>;
+}
+const loom::kernel::descriptor* big() {
+  return &loom::kernel::kernel_ref<&run<Big>>;
+}
+"""
+        )
+        # Without the drop policy the rejected kernel fails the compile.
+        self.compile(source, expect_success=False)
+        elf, stderr, _ = self.compile(source, "--loom-drop-failed-kernels")
+        self.assertIn("compile rejected 1 kernel(s)", stderr)
+        self.assertIn("excluding and retrying", stderr)
+        self.assertIn("compile-dropped: ", stderr)
+        self.assertIn("preprocess=1 parse=1", stderr)
+        self.assertIn("imports=2 device_compiles=2", stderr)
+        for symbol, available in ((BODY_REF, 1), (big_ref, 0)):
+            descriptor = elf.descriptor(symbol)
+            self.assertEqual(
+                (descriptor["version"], descriptor["flags"]),
+                (DESCRIPTOR_VERSION, available),
+            )
+        self.assertIsNone(elf.descriptor(big_ref)["pack"])
+        self.assertTrue(self.device_code_objects(elf))
+
     def test_export_ordinals_number_the_code_object_exports(self):
         # Several kernels in one code object: each descriptor names its own
         # kernel by the ordinal HRX's loader gives the export, the kernel's
