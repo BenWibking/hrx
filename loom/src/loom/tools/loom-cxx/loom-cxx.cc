@@ -103,7 +103,7 @@ namespace {
 constexpr std::string_view kTool = "loom-cxx";
 // Itanium mangling prefix of loom::kernel::kernel_ref<...> variables.
 constexpr std::string_view kKernelRefPrefix = "_ZN4loom6kernel10kernel_ref";
-// Rounds of compile-rejection exclusion, as in the previous two-pass driver.
+// Rounds of compile-rejection exclusion before a device pass gives up.
 constexpr int kMaxDeviceRounds = 5;
 // loom::kernel::descriptor_version and descriptor_leaf_* in
 // loomcxx/kernel_ref.h.

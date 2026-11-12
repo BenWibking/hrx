@@ -189,11 +189,6 @@ typedef struct loomc_cxx_import_options_t {
   const loomc_string_view_t* excluded_kernels;
   /// Number of excluded kernel export names.
   loomc_host_size_t excluded_kernel_count;
-  /// Optional path receiving assembly defining the host launch descriptors of
-  /// the reached loom::kernel::kernel_ref specializations, for the legacy
-  /// two-pass single-source build (weak COMDAT objects with an assumed AMDGPU
-  /// kernel argument layout). Empty writes none.
-  loomc_string_view_t kernel_descriptors_path;
 } loomc_cxx_import_options_t;
 
 /// Creates an immutable semantic preamble from leading include directives.
@@ -328,8 +323,8 @@ LOOMC_API_EXPORT void loomc_cxx_unit_release(loomc_cxx_unit_t* unit);
 /// @param workspace Workspace backing the returned module's arena storage.
 /// @param unit Unit from loomc_cxx_unit_parse. It is not reparsed.
 /// @param options Import policy, or NULL for defaults: roots, excluded kernels,
-/// kernel descriptor path, floating-point model, path mapper, and the HOSTED
-/// and DROP_FAILED_KERNELS flags. Source configuration
+/// floating-point model, path mapper, and the HOSTED and DROP_FAILED_KERNELS
+/// flags. Source configuration
 /// fields were fixed when the unit was parsed and are ignored.
 /// @param allocator Host allocator for public handles and temporary adapters.
 /// @param out_module Receives one owned module on successful translation.

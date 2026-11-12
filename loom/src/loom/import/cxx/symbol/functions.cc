@@ -26,10 +26,8 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
-#include <cstdio>
 #include <cstdlib>
 #include <deque>
-#include <format>
 #include <functional>
 #include <limits>
 #include <memory>
@@ -651,108 +649,6 @@ std::vector<KernelLaunch> Functions::kernel_launches() {
     launches.push_back(std::move(launch));
   }
   return launches;
-}
-
-namespace {
-
-// loom::kernel::descriptor_version in loomcxx/kernel_ref.h.
-constexpr unsigned kDescriptorVersion = 2;
-
-// Quotes an assembler symbol or string operand.
-std::string assembly_quote(std::string_view text) {
-  std::string quoted = "\"";
-  for (char c : text) {
-    if (c == '"' || c == '\\') {
-      quoted += '\\';
-    }
-    quoted += c;
-  }
-  quoted += '"';
-  return quoted;
-}
-
-}  // namespace
-
-void Functions::write_kernel_descriptors() {
-  const std::string path =
-      options_ ? string(options_->kernel_descriptors_path) : std::string();
-  if (path.empty()) {
-    return;
-  }
-  // Legacy two-pass path. One weak COMDAT definition per kernel_ref
-  // specialization (ELF, LP64), so several translation units may define the
-  // same descriptor. Layout of loom::kernel::descriptor and descriptor_leaf in
-  // loomcxx/kernel_ref.h:
-  //   u32 version, u32 flags, ptr name, u32 workgroup_size[3],
-  //   u32 kernarg_size, u32 parameter_count, u32 leaf_count, ptr leaves,
-  //   ptr code_object (null: any registered code object exporting the name)
-  //   leaf: u32 parameter, kind, source_offset, kernarg_offset, size
-  // A kernel_ref whose kernel was dropped or excluded has flags 0 and no
-  // leaves: the host reports the launch as having no device code.
-  //
-  // LEGACY: the kernel is not compiled here, so the kernel argument offsets
-  // repeat Loom's AMDGPU HAL kernel argument layout
-  // (target/arch/amdgpu/lower/abi.c): a buffer is an 8-byte, 8-aligned
-  // pointer; a by-value argument starts at a 4-byte boundary and occupies
-  // whole 4-byte words, its payload in the low bytes; the segment is padded
-  // to 8 bytes. (The copy covers scalars; a vector argument's word count is
-  // the lowering's register unit count.) loom-cxx does not use this copy: it reads the layout of the
-  // compiled kernel from the compiler's artifact manifest.
-  std::string text = "# Loom kernel descriptors\n";
-  size_t index = 0;
-  for (const auto& launch : kernel_launches()) {
-    std::string quoted = assembly_quote(launch.symbol);
-    std::string label = std::format(".Lloom_kernel_descriptor_{}", index++);
-    text += std::format(
-        "  .section {3},\"aG\",%progbits,{0},comdat\n"
-        "  .weak {0}\n"
-        "  .type {0},%object\n"
-        "  .size {0},56\n"
-        "  .p2align 3\n"
-        "{0}:\n"
-        "  .long {4}, {1}\n"
-        "  .quad {2}_name\n",
-        quoted, launch.available ? 1 : 0, label,
-        assembly_quote(".rodata." + launch.symbol), kDescriptorVersion);
-    if (launch.available) {
-      uint64_t kernarg_size = 0;
-      std::vector<uint64_t> kernarg_offsets;
-      for (const auto& leaf : launch.leaves) {
-        const uint64_t align = leaf.kind == 1 ? 8 : 4;
-        const uint64_t slot = leaf.kind == 1 ? 8 : (leaf.size + 3) / 4 * 4;
-        kernarg_offsets.push_back((kernarg_size + align - 1) / align * align);
-        kernarg_size = kernarg_offsets.back() + slot;
-      }
-      kernarg_size = (kernarg_size + 7) / 8 * 8;
-      text += std::format("  .long {}, {}, {}, {}, {}, {}\n",
-                          launch.workgroup_size[0], launch.workgroup_size[1],
-                          launch.workgroup_size[2], kernarg_size,
-                          launch.parameter_count, launch.leaves.size());
-      text += launch.leaves.empty()
-                  ? std::string("  .quad 0\n  .quad 0\n")
-                  : std::format("  .quad {}_leaves\n  .quad 0\n{}_leaves:\n",
-                                label, label);
-      for (size_t i = 0; i < launch.leaves.size(); ++i) {
-        const auto& leaf = launch.leaves[i];
-        text += std::format("  .long {}, {}, {}, {}, {}\n", leaf.parameter,
-                            leaf.kind, leaf.source_offset, kernarg_offsets[i],
-                            leaf.size);
-      }
-    } else {
-      text += "  .long 0, 0, 0, 0, 0, 0\n  .quad 0\n  .quad 0\n";
-    }
-    text += std::format("{}_name:\n  .asciz {}\n", label,
-                        assembly_quote(launch.export_name));
-  }
-  text += "  .section .note.GNU-stack,\"\",%progbits\n";
-  FILE* file = std::fopen(path.c_str(), "w");
-  if (!file) {
-    throw StatusError(iree_make_status(IREE_STATUS_UNAVAILABLE,
-                                       "cannot write kernel descriptors to %s",
-                                       path.c_str()));
-  }
-  std::fwrite(text.data(), 1, text.size(), file);
-  std::fclose(file);
 }
 
 std::vector<cxx::FunctionSymbol*> Functions::discover_launched_kernels(

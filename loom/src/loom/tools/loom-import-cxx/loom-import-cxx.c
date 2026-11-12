@@ -39,22 +39,12 @@ IREE_FLAG(bool, cleanup, true,
           "Canonicalize, eliminate common expressions, and remove dead IR.");
 IREE_FLAG_NAMED(bool, builtin_includes, "builtin-includes", true,
                 "Search embedded Loom/HIP source headers when available.");
-IREE_FLAG(bool, hosted, false,
-          "Hosted single-source profile: parse as a host compile for --triple "
-          "(an x86_64 or aarch64 Linux triple) with exceptions disabled; "
-          "helpers declaring workgroup storage are required-inline.");
 IREE_FLAG_NAMED(bool, drop_failed_kernels, "drop-failed-kernels", false,
                 "Drop launched kernels that cannot be imported instead of "
                 "rejecting the translation unit.");
 IREE_FLAG_LIST_NAMED(string, exclude_kernel, "exclude-kernel",
                      "Launched kernel export name omitted from "
                      "--root=@launched selection; repeat for several.");
-IREE_FLAG_NAMED(string, kernel_descriptors, "kernel-descriptors", "",
-                "Path receiving assembly that defines the host launch "
-                "descriptor of each loom::kernel::kernel_ref specialization "
-                "reached from host code, as weak COMDAT objects (legacy "
-                "two-pass single source; loom-cxx defines descriptors from "
-                "the compiled kernels instead).");
 IREE_FLAG(string, options, "",
           "Provider option string used by build-system source declarations. "
           "When present, it replaces the individual source configuration "
@@ -122,12 +112,9 @@ static iree_status_t loom_cxx_cli_options_from_flags(
   if (!FLAG_builtin_includes) {
     out_options->flags |= LOOMC_CXX_IMPORT_FLAG_NO_BUILTIN_INCLUDES;
   }
-  if (FLAG_hosted) out_options->flags |= LOOMC_CXX_IMPORT_FLAG_HOSTED;
   if (FLAG_drop_failed_kernels) {
     out_options->flags |= LOOMC_CXX_IMPORT_FLAG_DROP_FAILED_KERNELS;
   }
-  out_options->kernel_descriptors_path =
-      loomc_make_cstring_view(FLAG_kernel_descriptors);
 
   const iree_flag_string_list_t includes = FLAG_include_path_list();
   const iree_flag_string_list_t system_includes =

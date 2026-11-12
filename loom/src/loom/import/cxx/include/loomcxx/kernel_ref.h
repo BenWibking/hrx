@@ -14,19 +14,13 @@
 // importer treats the same odr-use as a launch root and exports K. The
 // descriptor gives the host K's export name and how to pack its kernel
 // arguments, so the host can dispatch K without naming conventions or side
-// tables. Two drivers define descriptors:
-//
-//   - loom-cxx (one pass) compiles host and device code from one parse and
-//     defines each descriptor the host references inside the host object,
-//     with local linkage. Each object resolves its own references to its own
-//     descriptors, which name the object's own embedded code object; no
-//     kernel_ref symbol is exported, so descriptors of different kernels with
-//     the same mangled name (internal-linkage lambdas, for example) never
-//     merge. The kernel argument layout comes from the compiled kernel.
-//   - Legacy two pass: the host compiler compiles the unit, and
-//     loom-import-cxx --root=@launched --kernel-descriptors=<file> writes
-//     assembly defining each specialization as a weak COMDAT object, with
-//     the kernel argument layout assumed from Loom's AMDGPU lowering.
+// tables. loom-cxx compiles host and device code from one parse and defines
+// each descriptor the host references inside the host object, with local
+// linkage. Each object resolves its own references to its own descriptors,
+// which name the object's own embedded code object; no kernel_ref symbol is
+// exported, so descriptors of different kernels with the same mangled name
+// (internal-linkage lambdas, for example) never merge. The kernel argument
+// layout comes from the compiled kernel.
 //
 // To launch, a host zero-fills |kernarg_size| bytes, copies each leaf's
 // |size| bytes from |source_offset| in the parameter object to
@@ -84,15 +78,13 @@ struct descriptor {
   const descriptor_leaf* leaves;
   // The code object that exports |name| for this descriptor: the address
   // loom-cxx passes to its registration function for the object's embedded
-  // code object. Null when the kernel is unavailable, or for legacy
-  // descriptors, whose kernel any registered code object exporting |name|
-  // provides.
+  // code object. Null when the kernel is unavailable.
   const void* code_object;
 };
 
 // The descriptor of kernel K. Odr-use it, for example by taking its address,
-// from host code that launches K. It has no definition in C++; loom-cxx (or
-// the legacy --kernel-descriptors output) defines each specialization.
+// from host code that launches K. It has no definition in C++; loom-cxx
+// defines each specialization.
 template <auto Kernel>
 [[loom::kernel_ref]] extern const descriptor kernel_ref;
 

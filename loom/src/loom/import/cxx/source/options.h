@@ -136,12 +136,6 @@ typedef struct loom_cxx_import_options_t {
   const iree_string_view_t* excluded_kernels;
   // Number of excluded kernel export names.
   iree_host_size_t excluded_kernel_count;
-  // Optional path receiving assembly that defines one host launch descriptor
-  // per loom::kernel::kernel_ref specialization reached from host code
-  // (loomcxx/kernel_ref.h), for the legacy two-pass single-source build: weak
-  // COMDAT objects with an assumed AMDGPU kernel argument layout. Empty writes
-  // none.
-  iree_string_view_t kernel_descriptors_path;
 } loom_cxx_import_options_t;
 
 // Parses the canonical precise or fast floating-point model spelling.

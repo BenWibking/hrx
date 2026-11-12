@@ -719,43 +719,50 @@ class LaunchedImportTest : public ImportTest {
     ImportTest::SetUp();
     options_.roots = &launched_root_;
     options_.root_count = 1;
-    descriptors_path_ = (std::filesystem::path(::testing::TempDir()) /
-                         (std::string(::testing::UnitTest::GetInstance()
-                                          ->current_test_info()
-                                          ->name()) +
-                          ".s"))
-                            .string();
-    std::filesystem::remove(descriptors_path_);
-    options_.kernel_descriptors_path = iree_make_string_view(
-        descriptors_path_.data(), descriptors_path_.size());
   }
 
-  std::string Descriptors() const {
-    std::ifstream file(descriptors_path_);
-    std::stringstream contents;
-    contents << file.rdbuf();
-    return contents.str();
+  void TearDown() override {
+    loom_cxx_unit_free(unit_);
+    ImportTest::TearDown();
   }
 
-  // The descriptor assembly following the definition of |symbol|, up to the
-  // next descriptor.
-  std::string Descriptor(const std::string& symbol) const {
-    const std::string descriptors = Descriptors();
-    const std::string label = "\"" + symbol + "\":\n";
-    const size_t begin = descriptors.find(label);
-    if (begin == std::string::npos) {
-      return {};
+  // Parses |source| as a hosted unit and imports it, as loom-cxx does, so the
+  // unit reports the host launch facts of its kernel_ref specializations.
+  iree_status_t ImportUnit(iree_string_view_t source) {
+    loom_module_free(module_);
+    module_ = nullptr;
+    loom_cxx_unit_free(unit_);
+    unit_ = nullptr;
+    options_.flags |= LOOM_CXX_IMPORT_FLAG_HOSTED;
+    options_.triple = IREE_SV("x86_64-linux-gnu");
+    IREE_RETURN_IF_ERROR(loom_cxx_unit_parse(source, IREE_SV("/app/source.cpp"),
+                                             &options_, iree_allocator_system(),
+                                             &unit_));
+    if (!unit_) {
+      return iree_ok_status();
     }
-    const size_t end = descriptors.find("  .section", begin);
-    return descriptors.substr(begin, end - begin);
+    return loom_cxx_import_unit(unit_, &context_, &pool_, &options_,
+                                iree_allocator_system(), &module_);
+  }
+
+  // The launch facts of the kernel_ref specialization |symbol|, or null.
+  const loom::cxx_import::KernelLaunch* Launch(
+      const std::string& symbol) const {
+    for (const auto& launch : loom::cxx_import::unit_kernel_launches(unit_)) {
+      if (launch.symbol == symbol) {
+        return &launch;
+      }
+    }
+    return nullptr;
   }
 
   const iree_string_view_t launched_root_ = IREE_SV("@launched");
-  std::string descriptors_path_;
+  // Unit of the most recent ImportUnit().
+  loom_cxx_unit_t* unit_ = nullptr;
 };
 
 TEST_F(LaunchedImportTest, LaunchedRootsExportOnlyLaunchedKernelInstances) {
-  IREE_ASSERT_OK(Import(iree_make_cstring_view(kLaunchedSource)));
+  IREE_ASSERT_OK(ImportUnit(iree_make_cstring_view(kLaunchedSource)));
   ASSERT_NE(module_, nullptr);
   EXPECT_EQ(error_count_, 0);
   // Each launched instance is exported under its kernel_type_symbol name, the
@@ -765,8 +772,8 @@ TEST_F(LaunchedImportTest, LaunchedRootsExportOnlyLaunchedKernelInstances) {
   EXPECT_NE(printed.find("@run__4Body"), std::string::npos) << printed;
   EXPECT_NE(printed.find("@run__5Other"), std::string::npos) << printed;
   EXPECT_EQ(printed.find("@host"), std::string::npos) << printed;
-  // Launches through loom::kernel::launch carry no kernel_ref descriptors.
-  EXPECT_EQ(Descriptors().find(".weak"), std::string::npos) << Descriptors();
+  // Launches through loom::kernel::launch reference no kernel_ref descriptors.
+  EXPECT_TRUE(loom::cxx_import::unit_kernel_launches(unit_).empty());
 }
 
 TEST_F(LaunchedImportTest, ExcludedKernelsAreOmittedFromLaunchedRoots) {
@@ -874,80 +881,72 @@ TEST_F(LaunchedImportTest, KernelRefRootsExportReferencedKernels) {
   EXPECT_EQ(printed.find("describe"), std::string::npos) << printed;
 }
 
-TEST_F(LaunchedImportTest, KernelDescriptorSymbolsAreKernelRefSpecializations) {
-  IREE_ASSERT_OK(Import(iree_make_cstring_view(kKernelRefSource)));
+TEST_F(LaunchedImportTest, KernelLaunchesNameKernelRefSpecializations) {
+  IREE_ASSERT_OK(ImportUnit(iree_make_cstring_view(kKernelRefSource)));
   ASSERT_NE(module_, nullptr);
-  // One weak COMDAT definition per specialization, under the Itanium symbol
-  // a host C++ compiler references for kernel_ref<&K>.
-  const std::string descriptors = Descriptors();
+  // One launch per specialization, under the Itanium symbol a host C++
+  // compiler references for kernel_ref<&K>.
+  EXPECT_EQ(loom::cxx_import::unit_kernel_launches(unit_).size(), 3u);
   for (const char* symbol : {kBodyReference, kOtherReference, kFixedReference}) {
-    const std::string quoted = std::string("\"") + symbol + "\"";
-    EXPECT_NE(descriptors.find("  .section \".rodata." + std::string(symbol) +
-                               "\",\"aG\",%progbits," + quoted + ",comdat\n"
-                               "  .weak " + quoted + "\n"),
-              std::string::npos)
-        << descriptors;
-    EXPECT_NE(descriptors.find("  .size " + quoted + ",56\n"),
-              std::string::npos)
-        << descriptors;
+    EXPECT_NE(Launch(symbol), nullptr) << symbol;
   }
 }
 
-TEST_F(LaunchedImportTest, KernelDescriptorsFollowKernelArgumentFlattening) {
-  IREE_ASSERT_OK(Import(iree_make_cstring_view(kKernelRefSource)));
+TEST_F(LaunchedImportTest, KernelLaunchesFollowKernelArgumentFlattening) {
+  IREE_ASSERT_OK(ImportUnit(iree_make_cstring_view(kKernelRefSource)));
   ASSERT_NE(module_, nullptr);
-  // Version 2, available. The configuration computes the workgroup size.
-  // One leaf per kernel argument, in argument order: the base's field, each
-  // array element, then one buffer leaf per pointer. Source offsets are the
-  // host object's (LP64): Base at 0, pad at 4, x at 16, y at 24. Kernel
-  // arguments align buffers to 8 and scalars to 4 (the legacy copy of the
-  // AMDGPU layout).
-  const std::string body = Descriptor(kBodyReference);
-  EXPECT_NE(body.find("  .long 2, 1\n"), std::string::npos) << body;
-  EXPECT_NE(body.find("  .long 0, 0, 0, 32, 1, 5\n"), std::string::npos)
-      << body;
-  EXPECT_NE(body.find("  .long 0, 0, 0, 0, 4\n"
-                      "  .long 0, 0, 4, 4, 4\n"
-                      "  .long 0, 0, 8, 8, 4\n"
-                      "  .long 0, 1, 16, 16, 8\n"
-                      "  .long 0, 1, 24, 24, 8\n"),
-            std::string::npos)
-      << body;
-  EXPECT_NE(body.find("  .asciz \"_Z3runI4BodyEvT_\"\n"), std::string::npos)
-      << body;
-  const std::string other = Descriptor(kOtherReference);
-  EXPECT_NE(other.find("  .long 0, 0, 0, 8, 1, 1\n"), std::string::npos)
-      << other;
-  EXPECT_NE(other.find("  .long 0, 1, 0, 0, 8\n"), std::string::npos)
-      << other;
-  // An exact workgroup_size annotation fixes the descriptor's size.
-  const std::string fixed = Descriptor(kFixedReference);
-  EXPECT_NE(fixed.find("  .long 64, 1, 1, 8, 1, 1\n"), std::string::npos)
-      << fixed;
-  EXPECT_NE(fixed.find("  .asciz \"_Z5fixedPf\"\n"), std::string::npos)
-      << fixed;
+  // (kind, source offset, size) of one leaf per kernel argument, in argument
+  // order: the base's field, each array element, then one buffer leaf per
+  // pointer. Source offsets are the host object's (LP64): Base at 0, pad at
+  // 4, x at 16, y at 24.
+  auto expect_leaves = [](const loom::cxx_import::KernelLaunch& launch,
+                          std::vector<std::array<uint64_t, 3>> expected) {
+    ASSERT_EQ(launch.leaves.size(), expected.size()) << launch.symbol;
+    for (size_t i = 0; i < expected.size(); ++i) {
+      EXPECT_EQ(launch.leaves[i].parameter, 0u) << i;
+      EXPECT_EQ(launch.leaves[i].kind, expected[i][0]) << i;
+      EXPECT_EQ(launch.leaves[i].source_offset, expected[i][1]) << i;
+      EXPECT_EQ(launch.leaves[i].size, expected[i][2]) << i;
+    }
+  };
+  const auto* body = Launch(kBodyReference);
+  ASSERT_NE(body, nullptr);
+  EXPECT_TRUE(body->available);
+  EXPECT_EQ(body->export_name, "_Z3runI4BodyEvT_");
+  // The configuration computes the workgroup size.
+  EXPECT_EQ(body->workgroup_size, (std::array<uint32_t, 3>{0, 0, 0}));
+  EXPECT_EQ(body->parameter_count, 1u);
+  expect_leaves(*body,
+                {{0, 0, 4}, {0, 4, 4}, {0, 8, 4}, {1, 16, 8}, {1, 24, 8}});
+  const auto* other = Launch(kOtherReference);
+  ASSERT_NE(other, nullptr);
+  expect_leaves(*other, {{1, 0, 8}});
+  // An exact workgroup_size annotation fixes the launch's size.
+  const auto* fixed = Launch(kFixedReference);
+  ASSERT_NE(fixed, nullptr);
+  EXPECT_EQ(fixed->workgroup_size, (std::array<uint32_t, 3>{64, 1, 1}));
+  EXPECT_EQ(fixed->export_name, "_Z5fixedPf");
+  expect_leaves(*fixed, {{1, 0, 8}});
 }
 
 TEST_F(LaunchedImportTest, ExcludedKernelRefKernelsKeepUnavailableDescriptors) {
   const iree_string_view_t excluded = IREE_SV("_Z3runI5OtherEvT_");
   options_.excluded_kernels = &excluded;
   options_.excluded_kernel_count = 1;
-  IREE_ASSERT_OK(Import(iree_make_cstring_view(kKernelRefSource)));
+  IREE_ASSERT_OK(ImportUnit(iree_make_cstring_view(kKernelRefSource)));
   ASSERT_NE(module_, nullptr);
   const std::string printed = Print();
   EXPECT_NE(printed.find("@_Z3runI4BodyEvT_"), std::string::npos);
   EXPECT_EQ(printed.find("_Z3runI5OtherEvT_"), std::string::npos) << printed;
-  // The host still references the excluded kernel's descriptor: it is
-  // defined without the available flag and without leaves.
-  const std::string other = Descriptor(kOtherReference);
-  EXPECT_NE(other.find("  .long 2, 0\n"), std::string::npos) << other;
-  EXPECT_NE(other.find("  .long 0, 0, 0, 0, 0, 0\n  .quad 0\n"),
-            std::string::npos)
-      << other;
-  EXPECT_NE(other.find("  .asciz \"_Z3runI5OtherEvT_\"\n"), std::string::npos)
-      << other;
-  EXPECT_NE(Descriptor(kBodyReference).find("  .long 2, 1\n"),
-            std::string::npos);
+  // The host still references the excluded kernel's descriptor: its launch
+  // is unavailable and has no leaves.
+  const auto* other = Launch(kOtherReference);
+  ASSERT_NE(other, nullptr);
+  EXPECT_FALSE(other->available);
+  EXPECT_TRUE(other->leaves.empty());
+  EXPECT_EQ(other->export_name, "_Z3runI5OtherEvT_");
+  ASSERT_NE(Launch(kBodyReference), nullptr);
+  EXPECT_TRUE(Launch(kBodyReference)->available);
 }
 
 TEST_F(LaunchedImportTest, DroppedKernelRefKernelsKeepUnavailableDescriptors) {
@@ -960,22 +959,60 @@ const loom::kernel::descriptor* host_bad() { return describe<Bad>(); }
 )cxx";
   options_.flags |= LOOM_CXX_IMPORT_FLAG_DROP_FAILED_KERNELS;
   const auto view = iree_make_string_view(source.data(), source.size());
-  IREE_ASSERT_OK(Import(view));
+  IREE_ASSERT_OK(ImportUnit(view));
   ASSERT_NE(module_, nullptr);
   EXPECT_EQ(error_count_, 0);
   EXPECT_EQ(Print().find("_Z3runI3BadEvT_"), std::string::npos);
-  const std::string bad =
-      Descriptor("_ZN4loom6kernel10kernel_refIXadL_Z3runI3BadEvT_EEEE");
-  EXPECT_NE(bad.find("  .long 2, 0\n"), std::string::npos) << Descriptors();
-  EXPECT_NE(Descriptor(kBodyReference).find("  .long 2, 1\n"),
-            std::string::npos);
+  const auto* bad =
+      Launch("_ZN4loom6kernel10kernel_refIXadL_Z3runI3BadEvT_EEEE");
+  ASSERT_NE(bad, nullptr);
+  EXPECT_FALSE(bad->available);
+  ASSERT_NE(Launch(kBodyReference), nullptr);
+  EXPECT_TRUE(Launch(kBodyReference)->available);
 }
 
-TEST_F(LaunchedImportTest, KernelDescriptorsAreOptional) {
-  options_.kernel_descriptors_path = iree_string_view_empty();
-  IREE_ASSERT_OK(Import(iree_make_cstring_view(kKernelRefSource)));
+// Hosted code branches on loom::target::is_device(); the device pass imports
+// only the device arm, so host-only calls never reach device code.
+TEST_F(LaunchedImportTest, HostedImportKeepsOnlyTheDeviceArmOfDeviceQueries) {
+  constexpr char kSource[] = R"cxx(
+#include <loomcxx/kernel.h>
+#include <loomcxx/target.h>
+extern "C" int printf(const char* format, ...);
+static loom::kernel::configuration launch_config(unsigned groups) {
+  return {{groups, 1, 1}, {64, 1, 1}};
+}
+template <class T>
+[[loom::kernel(launch_config), loom::kernel_type_symbol]]
+void run(T tag) { tag(); }
+inline float scaled(float value) {
+  if (loom::target::is_device()) {
+    return value * 2.0f;
+  } else {
+    printf("host %f\n", value);
+    return value;
+  }
+}
+struct Body {
+  float a;
+  float* y;
+  [[loom::inline]] void operator()() const {
+    if (!loom::target::is_device()) { printf("host\n"); }
+    y[0] = scaled(a);
+  }
+};
+void host(float* y) {
+  loom::kernel::launch<run<Body>>(loom::kernel::workload(1u), Body{2.0f, y});
+  printf("%f\n", scaled(1.0f));
+}
+)cxx";
+  IREE_ASSERT_OK(ImportUnit(iree_make_cstring_view(kSource)));
   ASSERT_NE(module_, nullptr);
-  EXPECT_FALSE(std::filesystem::exists(descriptors_path_));
+  EXPECT_EQ(error_count_, 0);
+  const std::string printed = Print();
+  EXPECT_NE(printed.find("@run__4Body"), std::string::npos) << printed;
+  EXPECT_NE(printed.find("scalar.mulf"), std::string::npos) << printed;
+  EXPECT_EQ(printed.find("printf"), std::string::npos) << printed;
+  EXPECT_EQ(printed.find("@host"), std::string::npos) << printed;
 }
 
 // A unit is parsed once and imported from its existing translation unit, as
@@ -1008,8 +1045,13 @@ TEST_F(LaunchedImportTest, ParsedUnitImportsWithoutReparsing) {
   ASSERT_NE(module_, nullptr);
   EXPECT_EQ(error_count_, 0);
   EXPECT_NE(Print().find("@_Z3runI4BodyEvT_"), std::string::npos);
-  EXPECT_NE(Descriptor(kBodyReference).find("  .long 2, 1\n"),
-            std::string::npos);
+  auto body_available = [&] {
+    for (const auto& launch : loom::cxx_import::unit_kernel_launches(unit)) {
+      if (launch.symbol == kBodyReference) return launch.available;
+    }
+    return false;
+  };
+  EXPECT_TRUE(body_available());
 
   // Importing again, for example with a kernel the device compiler rejected
   // excluded, reuses the same translation unit.
@@ -1022,8 +1064,7 @@ TEST_F(LaunchedImportTest, ParsedUnitImportsWithoutReparsing) {
                                       iree_allocator_system(), &module_));
   ASSERT_NE(module_, nullptr);
   EXPECT_EQ(Print().find("@_Z3runI4BodyEvT_"), std::string::npos);
-  EXPECT_NE(Descriptor(kBodyReference).find("  .long 2, 0\n"),
-            std::string::npos);
+  EXPECT_FALSE(body_available());
   EXPECT_EQ(loom::cxx_import::unit_statistics(unit).import_count, 2u);
   const auto imported = loom::cxx_import::frontend_statistics();
   EXPECT_EQ(imported.preprocess_count, parsed.preprocess_count);
@@ -1092,25 +1133,6 @@ const loom::kernel::descriptor* host_mixed() { return describe<Mixed>(); }
     EXPECT_EQ(mixed->leaves[i].source_offset, expected[i][1]) << i;
     EXPECT_EQ(mixed->leaves[i].size, expected[i][2]) << i;
   }
-
-  // The legacy two-pass descriptor assumes the AMDGPU layout: each by-value
-  // argument starts on a 4-byte word, so adjacent sub-word scalars do not
-  // pack. (The rule before packed them at their own alignment: s at 2, b at 4.)
-  const std::string legacy = Descriptor(kMixedReference);
-  EXPECT_NE(legacy.find("  .long 0, 0, 0, 64, 1, 10\n"), std::string::npos)
-      << legacy;
-  EXPECT_NE(legacy.find("  .long 0, 0, 0, 0, 1\n"
-                        "  .long 0, 0, 2, 4, 2\n"
-                        "  .long 0, 0, 4, 8, 1\n"
-                        "  .long 0, 1, 8, 16, 8\n"
-                        "  .long 0, 0, 16, 24, 1\n"
-                        "  .long 0, 0, 24, 28, 8\n"
-                        "  .long 0, 1, 32, 40, 8\n"
-                        "  .long 0, 0, 40, 48, 1\n"
-                        "  .long 0, 0, 41, 52, 1\n"
-                        "  .long 0, 0, 44, 56, 4\n"),
-            std::string::npos)
-      << legacy;
 
   // Excluding the kernel keeps its launch, unavailable and without leaves.
   loom_module_free(module_);

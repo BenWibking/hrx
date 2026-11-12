@@ -257,14 +257,6 @@ class Functions {
   // Host launch facts of each loom::kernel::kernel_ref specialization reached
   // from host code, one per specialization in discovery order.
   std::vector<KernelLaunch> kernel_launches();
-  // Legacy two-pass path (loom-import-cxx --kernel-descriptors): writes one
-  // host launch descriptor per kernel_ref specialization to the import
-  // options' kernel descriptor path, if set, as assembly defining the
-  // specialization's Itanium symbol as a weak COMDAT object. Without the
-  // compiled kernel it assumes Loom's AMDGPU kernel argument layout; see
-  // loomcxx/kernel_ref.h. One-pass drivers use kernel_launches() and take the
-  // layout from the compiled artifact instead.
-  void write_kernel_descriptors();
   // Builds the selected native definition and launch contract at the caller's
   // module insertion point. The caller then enters and fills the returned body.
   DefinedFunction define(FunctionInstance instance, Types& types,

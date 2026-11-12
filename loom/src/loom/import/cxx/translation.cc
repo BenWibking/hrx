@@ -163,7 +163,6 @@ class Translator final : private Initialization::Evaluation {
     functions_.build_benchmarks(locations_, &builder_);
     immutable_objects_.build(&builder_);
     assembly_fragments_.verify(module_, options_.diagnostic_sink);
-    functions_.write_kernel_descriptors();
     if (out_kernel_launches) {
       *out_kernel_launches = functions_.kernel_launches();
     }
