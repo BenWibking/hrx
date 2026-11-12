@@ -45,6 +45,22 @@ endfunction()
 function(_iree_configure_cxx_project source_dir)
   find_package(MLIR REQUIRED CONFIG)
   message(STATUS "Loom C++ host code generation: cxx with MLIR ${MLIR_DIR}")
+  # cxx requires MLIR_VERSION >= 21. Some MLIR packages (conda-forge's mlir)
+  # leave PACKAGE_VERSION empty in MLIRConfigVersion.cmake, so MLIR_VERSION is
+  # empty although the matching LLVM reports its version. For this configure
+  # run, redirect cxx's find_package(MLIR) to the same package with LLVM's
+  # version; the redirect directory is cleared at the start of every run.
+  set(_mlir_dir "")
+  if(NOT MLIR_VERSION AND LLVM_PACKAGE_VERSION)
+    set(_mlir_dir "${MLIR_DIR}")
+    message(STATUS "MLIR package reports no version; using LLVM's "
+                   "${LLVM_PACKAGE_VERSION}")
+    file(WRITE "${CMAKE_FIND_PACKAGE_REDIRECTS_DIR}/mlir-config.cmake"
+         "include(\"${_mlir_dir}/MLIRConfig.cmake\")\n")
+    file(WRITE "${CMAKE_FIND_PACKAGE_REDIRECTS_DIR}/mlir-config-version.cmake"
+         "set(PACKAGE_VERSION \"${LLVM_PACKAGE_VERSION}\")\n"
+         "set(PACKAGE_VERSION_COMPATIBLE TRUE)\n")
+  endif()
   set(CXX_ENABLE_MLIR ON)
   set(CXX_BUILD_TESTS OFF)
   set(CXX_INSTALL_TOOLS OFF)
@@ -56,6 +72,12 @@ function(_iree_configure_cxx_project source_dir)
   # EXCLUDE_FROM_ALL: only libraries that HRX targets link are built.
   add_subdirectory("${source_dir}" "${CMAKE_BINARY_DIR}/third_party/cxx"
                    SYSTEM EXCLUDE_FROM_ALL)
+  if(_mlir_dir)
+    # cxx's find_package(MLIR) recorded the redirect directory; keep the
+    # user's package for the next configure run.
+    set(MLIR_DIR "${_mlir_dir}" CACHE PATH
+        "The directory containing a CMake configuration file for MLIR." FORCE)
+  endif()
   foreach(_target IN ITEMS cxx-parser cxx-codegen cxx-mlir)
     if(NOT TARGET ${_target})
       message(FATAL_ERROR "cxx did not define ${_target}")
