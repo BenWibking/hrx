@@ -410,7 +410,10 @@ const loom::kernel::descriptor* host_entry() {
         self.assertIn("loomcxx/kernel.h", depfile)
 
     def test_host_only_unit_has_no_device_pass(self):
-        elf, stderr, _ = self.compile("int host_only(int x) { return x + 1; }\n")
+        # -v, which CMake passes while checking the compiler, is accepted.
+        elf, stderr, _ = self.compile(
+            "int host_only(int x) { return x + 1; }\n", "-v"
+        )
         self.assertIn("preprocess=1 parse=1", stderr)
         self.assertIn("imports=0 device_compiles=0", stderr)
         self.assertIsNone(elf.section(".init_array"))

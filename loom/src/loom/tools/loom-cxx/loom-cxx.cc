@@ -167,7 +167,7 @@ void print_help() {
       "  -O0 -O1 -O2 -O3 -Os   host optimization level\n"
       "  -MD -MMD -MP          dependency file, with -MF FILE, -MT/-MQ TARGET\n"
       "  --target=TRIPLE       host triple (default x86_64-linux-gnu)\n"
-      "  -W* -f* -g* -m* -w -pthread -pipe -Xclang ARG are ignored.\n"
+      "  -W* -f* -g* -m* -w -v -pthread -pipe -Xclang ARG are ignored.\n"
       "\n"
       "Loom options:\n"
       "  --loom-target=FAMILY:SELECTOR\n"
@@ -285,10 +285,11 @@ Options parse_options(int argc, char** argv) {
       options.ignored.push_back(std::string(arg) + " " + value(i, arg));
     } else if (starts_with(arg, "-W") || starts_with(arg, "-f") ||
                starts_with(arg, "-g") || starts_with(arg, "-m") ||
-               arg == "-w" || arg == "-pthread" || arg == "-pipe" ||
-               arg == "-pedantic") {
+               arg == "-w" || arg == "-v" || arg == "-pthread" ||
+               arg == "-pipe" || arg == "-pedantic") {
       // Diagnostics, code-model and debug flags of the surrounding build.
-      // The hosted profile fixes exceptions off and non-PIC host code.
+      // The hosted profile fixes exceptions off and non-PIC host code. Build
+      // systems pass -v while identifying the compiler (CMake's ABI check).
       options.ignored.push_back(std::string(arg));
     } else if (starts_with(arg, "-")) {
       usage_error(std::format("unsupported option '{}'", arg));
