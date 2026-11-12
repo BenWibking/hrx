@@ -9,7 +9,6 @@
 #include <cxx/symbols.h>
 #include <cxx/types.h>
 
-#include <cstdio>
 #include <cstdlib>
 #include <memory>
 #include <string>
@@ -150,9 +149,8 @@ iree_status_t import_parsed(loom_cxx_unit_t* unit, iree_string_view_t filename,
       if (!excluded.insert(kernel).second || excluded.size() > 1000) {
         throw SourceRejected();
       }
+      // The kernel's own diagnostic, a warning through the sink, reports it.
       ++unit->statistics.dropped_kernel_count;
-      std::fprintf(stderr, "loom-import-cxx: dropping launched kernel %s\n",
-                   cxx::to_string(kernel->type()).c_str());
     }
   }
   check(loom_callable_effect_inference_run(module.get()));
