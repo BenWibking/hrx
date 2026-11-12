@@ -450,6 +450,18 @@ const loom::kernel::descriptor* host_entry() {
         self.assertEqual(self.device_code_objects(elf), [])
         self.assertIn("_Z9host_onlyi", elf.symbols())
 
+    def test_undefines_follow_every_definition(self):
+        # -U removes a -D definition whatever the order, as in GCC, and a
+        # predefined macro of the hosted profile.
+        source = """
+#if defined(FOO) || defined(__linux__)
+#error macro still defined
+#endif
+int host_only(int value) { return value; }
+"""
+        self.compile(source, "-UFOO", "-DFOO=1", "-U__linux__")
+        self.compile(source, "-DFOO=1", expect_success=False)
+
     def test_dropped_kernels_keep_unavailable_descriptors(self):
         source = (
             KERNEL_PRELUDE

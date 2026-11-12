@@ -127,6 +127,8 @@ struct Options {
   // directory, or empty when none was found (see find_loomcxx_include_dir).
   std::string loomcxx_include_path;
   std::vector<std::string> defines;
+  // Macros removed after every -D definition, as GCC orders them.
+  std::vector<std::string> undefines;
   // Dependency file options (-MD/-MMD/-MP/-MF/-MT/-MQ).
   bool dependency_file = false;
   bool dependency_skip_system = false;
@@ -169,6 +171,7 @@ void print_help() {
       "  -I DIR, -isystem DIR  user and system include directories; the only\n"
       "                        implicit one holds Loom's loomcxx/ headers\n"
       "  -D NAME[=VALUE]       macro definition\n"
+      "  -U NAME               macro removal, after every -D\n"
       "  -std=STD              c++17, c++20 (default), ...; gnu++NN reads as\n"
       "                        c++NN\n"
       "  -O0 -O1 -O2 -O3 -Os   host optimization level\n"
@@ -269,6 +272,8 @@ Options parse_options(int argc, char** argv) {
       options.include_paths.push_back(joined(i, "-I"));
     } else if (starts_with(arg, "-D")) {
       options.defines.push_back(joined(i, "-D"));
+    } else if (starts_with(arg, "-U")) {
+      options.undefines.push_back(joined(i, "-U"));
     } else if (starts_with(arg, "-std=")) {
       auto standard = std::string(arg.substr(5));
       if (starts_with(standard, "gnu++")) {
@@ -896,6 +901,10 @@ bool Driver::parse() {
     defines[i].name = loomc_make_cstring_view(define_names[i].c_str());
     defines[i].value = loomc_make_cstring_view(define_values[i].c_str());
   }
+  std::vector<loomc_string_view_t> undefines;
+  for (const auto& name : options_.undefines) {
+    undefines.push_back(loomc_make_cstring_view(name.c_str()));
+  }
   loomc_cxx_import_options_t options = import_options();
   options.include_paths = includes.data();
   options.include_path_count = includes.size();
@@ -903,6 +912,8 @@ bool Driver::parse() {
   options.system_include_path_count = system_includes.size();
   options.defines = defines.data();
   options.define_count = defines.size();
+  options.undefines = undefines.data();
+  options.undefine_count = undefines.size();
 
   loomc_source_options_t source_options = {};
   source_options.identifier = loomc_make_cstring_view(options_.source.c_str());
