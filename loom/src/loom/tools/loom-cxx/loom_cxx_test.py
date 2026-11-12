@@ -26,7 +26,7 @@ STT_OBJECT, STT_FUNC, STT_FILE = 1, 2, 4
 SHN_UNDEF = 0
 SHT_RELA, SHT_NOTE = 4, 7
 KERNEL_REF_PREFIX = "_ZN4loom6kernel10kernel_ref"
-DESCRIPTOR_VERSION = 2
+DESCRIPTOR_VERSION = 3
 
 KERNEL_PRELUDE = r"""
 #include <loomcxx/kernel.h>
@@ -185,12 +185,12 @@ class Elf:
         relocations = self.relocations(shndx)
         (version, flags) = struct.unpack("<II", self.read(shndx, value, 8))
         wg = struct.unpack("<III", self.read(shndx, value + 16, 12))
-        kernarg_size, parameter_count, leaf_count = struct.unpack(
-            "<III", self.read(shndx, value + 28, 12)
+        kernarg_size, parameter_count, leaf_count, export_ordinal = struct.unpack(
+            "<IIII", self.read(shndx, value + 28, 16)
         )
         name = relocations.get(value + 8)
-        leaves = relocations.get(value + 40)
-        code_object = relocations.get(value + 48)
+        leaves = relocations.get(value + 48)
+        code_object = relocations.get(value + 56)
         leaf_rows = []
         if leaves:
             for i in range(leaf_count):
@@ -206,6 +206,7 @@ class Elf:
             "workgroup_size": wg,
             "kernarg_size": kernarg_size,
             "parameter_count": parameter_count,
+            "export_ordinal": export_ordinal,
             "leaves": leaf_rows,
             "code_object": code_object,
         }
@@ -222,7 +223,25 @@ class Elf:
     def amdgpu_kernel_arguments(self):
         """Kernel name -> (kernarg segment size, [(offset, size, value kind)])
         from the AMDGPU code object metadata note."""
-        result = {}
+        return {
+            kernel[".name"]: (
+                kernel[".kernarg_segment_size"],
+                [
+                    (a[".offset"], a[".size"], a[".value_kind"])
+                    for a in kernel.get(".args", [])
+                ],
+            )
+            for kernel in self.amdgpu_kernels()
+        }
+
+    def amdgpu_export_names(self):
+        """Kernel names in export ordinal order: the order of the AMDGPU code
+        object metadata, in which HRX's loader numbers the exports."""
+        return [kernel[".name"] for kernel in self.amdgpu_kernels()]
+
+    def amdgpu_kernels(self):
+        """The amdhsa.kernels entries of the AMDGPU code object metadata note."""
+        result = []
         for section in self.sections:
             if section[1] != SHT_NOTE:
                 continue
@@ -238,14 +257,7 @@ class Elf:
                 if name.rstrip(b"\0") != b"AMDGPU" or kind != 32:
                     continue
                 metadata, _ = msgpack_decode(desc, 0)
-                for kernel in metadata["amdhsa.kernels"]:
-                    result[kernel[".name"]] = (
-                        kernel[".kernarg_segment_size"],
-                        [
-                            (a[".offset"], a[".size"], a[".value_kind"])
-                            for a in kernel.get(".args", [])
-                        ],
-                    )
+                result.extend(metadata["amdhsa.kernels"])
         return result
 
 
@@ -393,10 +405,12 @@ const loom::kernel::descriptor* host_entry() {
         self.assertNotEqual(shndx, SHN_UNDEF)
         self.assertNoExportedKernelRefs(elf)
         descriptor = elf.descriptor(BODY_REF)
-        self.assertEqual((descriptor["version"], descriptor["flags"]), (2, 1))
+        self.assertEqual((descriptor["version"], descriptor["flags"]), (3, 1))
         self.assertEqual(descriptor["name"], "_Z3runI4BodyEvT_")
         self.assertIsNotNone(descriptor["code_object"])
-        self.assertIn("_Z3runI4BodyEvT_", elf.code_object_at(descriptor["code_object"]).amdgpu_kernel_arguments())
+        # The export ordinal numbers the kernel in that code object.
+        exports = elf.code_object_at(descriptor["code_object"]).amdgpu_export_names()
+        self.assertEqual(exports[descriptor["export_ordinal"]], "_Z3runI4BodyEvT_")
         # The embedded device code object and its registration constructor.
         self.assertTrue(self.device_code_objects(elf))
         self.assertGreater(elf.section(".init_array")[5], 0)
@@ -453,6 +467,39 @@ const loom::kernel::descriptor* bad() {
         self.assertEqual(elf.descriptor(BAD_REF)["leaves"], [])
         self.assertTrue(self.device_code_objects(elf))
 
+    def test_export_ordinals_number_the_code_object_exports(self):
+        # Several kernels in one code object: each descriptor names its own
+        # kernel by the ordinal HRX's loader gives the export, the kernel's
+        # position in the code object's metadata.
+        elf, _, _ = self.compile(
+            KERNEL_PRELUDE
+            + """
+struct Twice {
+  float* y;
+  [[loom::inline]] void operator()() const { y[0] = 2.0f * y[1]; }
+};
+struct Thrice {
+  float* y;
+  int n;
+  [[loom::inline]] void operator()() const { y[n] = 3.0f; }
+};
+const loom::kernel::descriptor* entries(int i) {
+  if (i == 0) return &loom::kernel::kernel_ref<&run<Thrice>>;
+  if (i == 1) return &loom::kernel::kernel_ref<&run<Body>>;
+  return &loom::kernel::kernel_ref<&run<Twice>>;
+}
+"""
+        )
+        descriptors = [elf.descriptor(name) for name, _, _ in elf.kernel_ref_symbols()]
+        self.assertEqual(len(descriptors), 3)
+        (code_object,) = {d["code_object"] for d in descriptors}
+        exports = elf.code_object_at(code_object).amdgpu_export_names()
+        self.assertEqual(
+            sorted(d["export_ordinal"] for d in descriptors), list(range(len(exports)))
+        )
+        for descriptor in descriptors:
+            self.assertEqual(exports[descriptor["export_ordinal"]], descriptor["name"])
+
     def assertNoExportedKernelRefs(self, elf):
         """Descriptors are local definitions: none exported, none undefined."""
         references = elf.kernel_ref_symbols()
@@ -492,7 +539,7 @@ const loom::kernel::descriptor* host_entry() {
         )
         symbol = "_ZN4loom6kernel10kernel_refIXadL_Z3runI5MixedEvT_EEEE"
         descriptor = elf.descriptor(symbol)
-        self.assertEqual((descriptor["version"], descriptor["flags"]), (2, 1))
+        self.assertEqual((descriptor["version"], descriptor["flags"]), (3, 1))
         self.assertEqual(descriptor["parameter_count"], 1)
         # (parameter, kind, source offset, kernarg offset, size). Host offsets
         # are the LP64 record layout; each by-value argument starts on a
@@ -565,6 +612,7 @@ struct descriptor {
   unsigned version, flags;
   const char* name;
   unsigned workgroup_size[3], kernarg_size, parameter_count, leaf_count;
+  unsigned export_ordinal;
   const struct leaf* leaves;
   const void* code_object;
 };
@@ -645,6 +693,7 @@ struct descriptor {
   unsigned version, flags;
   const char* name;
   unsigned workgroup_size[3], kernarg_size, parameter_count, leaf_count;
+  unsigned export_ordinal;
   const void* leaves;
   const void* code_object;
 };

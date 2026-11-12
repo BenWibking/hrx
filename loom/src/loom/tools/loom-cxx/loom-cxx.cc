@@ -31,7 +31,8 @@
 //      its own code object (loomcxx/kernel_ref.h). A descriptor combines the
 //      importer's host leaves (source offsets and sizes in the host object)
 //      with the kernel argument layout that the device compiler reports for
-//      the compiled kernel in its artifact manifest. Descriptors of kernels
+//      the compiled kernel in its artifact manifest, and names the kernel by
+//      the ordinal of its export in the code object. Descriptors of kernels
 //      without device code are defined without their available flag, so
 //      launching them fails at run time instead of at link time. The module
 //      is emitted as one object file.
@@ -108,7 +109,7 @@ constexpr std::string_view kKernelRefPrefix = "_ZN4loom6kernel10kernel_ref";
 constexpr int kMaxDeviceRounds = 5;
 // loom::kernel::descriptor_version and descriptor_leaf_* in
 // loomcxx/kernel_ref.h.
-constexpr uint32_t kDescriptorVersion = 2;
+constexpr uint32_t kDescriptorVersion = 3;
 constexpr uint32_t kDescriptorLeafBuffer = 1;
 
 struct Options {
@@ -451,6 +452,272 @@ double seconds_since(Clock::time_point start) {
 }
 
 // ---------------------------------------------------------------------------
+// AMDGPU code object exports
+// ---------------------------------------------------------------------------
+
+// Reads the MessagePack values of an AMDGPU code object metadata note.
+class MsgPackReader {
+ public:
+  explicit MsgPackReader(std::string_view data) : data_(data) {}
+
+  // Reads a string; false when the next value is not one.
+  bool read_string(std::string_view& value) {
+    const auto tag = byte();
+    if (!tag) {
+      return false;
+    }
+    uint64_t length = 0;
+    if (*tag >= 0xa0 && *tag <= 0xbf) {
+      length = *tag & 0x1f;
+    } else if (*tag == 0xd9 || *tag == 0xda || *tag == 0xdb) {
+      const auto read = unsigned_value(1u << (*tag - 0xd9));
+      if (!read) {
+        return false;
+      }
+      length = *read;
+    } else {
+      return false;
+    }
+    return bytes(length, value);
+  }
+
+  // Reads an array (or map) header and its element (or pair) count; false
+  // when the next value is not one.
+  bool read_array(uint64_t& count) { return read_container(false, count); }
+  bool read_map(uint64_t& count) { return read_container(true, count); }
+
+  // Skips the next value, with everything it contains.
+  bool skip() {
+    const auto tag = byte();
+    if (!tag) {
+      return false;
+    }
+    std::string_view ignored;
+    uint64_t count = 0;
+    const uint8_t t = *tag;
+    if (t <= 0x7f || t >= 0xe0 || t == 0xc0 || t == 0xc2 || t == 0xc3) {
+      return true;
+    }
+    if (t >= 0x80 && t <= 0x9f) {
+      count = t & 0x0f;
+      return skip_values(t <= 0x8f ? 2 * count : count);
+    }
+    if (t >= 0xa0 && t <= 0xbf) {
+      return bytes(t & 0x1f, ignored);
+    }
+    if (t >= 0xc4 && t <= 0xc6) {  // bin 8/16/32
+      const auto length = unsigned_value(1u << (t - 0xc4));
+      return length && bytes(*length, ignored);
+    }
+    if (t >= 0xc7 && t <= 0xc9) {  // ext 8/16/32: length, type, data
+      const auto length = unsigned_value(1u << (t - 0xc7));
+      return length && bytes(*length + 1, ignored);
+    }
+    if (t == 0xca || t == 0xcb) {  // float 32/64
+      return bytes(t == 0xca ? 4 : 8, ignored);
+    }
+    if (t >= 0xcc && t <= 0xd3) {  // uint and int 8/16/32/64
+      return bytes(1u << ((t - 0xcc) & 3), ignored);
+    }
+    if (t >= 0xd4 && t <= 0xd8) {  // fixext 1/2/4/8/16: type, data
+      return bytes((1u << (t - 0xd4)) + 1, ignored);
+    }
+    if (t >= 0xd9 && t <= 0xdb) {  // str 8/16/32
+      const auto length = unsigned_value(1u << (t - 0xd9));
+      return length && bytes(*length, ignored);
+    }
+    if (t >= 0xdc && t <= 0xdf) {  // array 16/32, map 16/32
+      const auto read = unsigned_value(t == 0xdc || t == 0xde ? 2 : 4);
+      return read && skip_values(t >= 0xde ? 2 * *read : *read);
+    }
+    return false;
+  }
+
+ private:
+  std::optional<uint8_t> byte() {
+    if (data_.empty()) {
+      return std::nullopt;
+    }
+    const auto value = static_cast<uint8_t>(data_.front());
+    data_.remove_prefix(1);
+    return value;
+  }
+  // Big-endian unsigned integer of |size| bytes.
+  std::optional<uint64_t> unsigned_value(unsigned size) {
+    std::string_view value;
+    if (!bytes(size, value)) {
+      return std::nullopt;
+    }
+    uint64_t result = 0;
+    for (char c : value) {
+      result = (result << 8) | static_cast<uint8_t>(c);
+    }
+    return result;
+  }
+  bool bytes(uint64_t size, std::string_view& value) {
+    if (size > data_.size()) {
+      return false;
+    }
+    value = data_.substr(0, size);
+    data_.remove_prefix(size);
+    return true;
+  }
+  bool skip_values(uint64_t count) {
+    for (uint64_t i = 0; i < count; ++i) {
+      if (!skip()) {
+        return false;
+      }
+    }
+    return true;
+  }
+  bool read_container(bool map, uint64_t& count) {
+    const auto tag = byte();
+    if (!tag) {
+      return false;
+    }
+    const uint8_t fixed = map ? 0x80 : 0x90;
+    if (*tag >= fixed && *tag <= fixed + 0x0f) {
+      count = *tag & 0x0f;
+      return true;
+    }
+    const uint8_t sized = map ? 0xde : 0xdc;
+    if (*tag != sized && *tag != sized + 1) {
+      return false;
+    }
+    const auto read = unsigned_value(*tag == sized ? 2 : 4);
+    if (!read) {
+      return false;
+    }
+    count = *read;
+    return true;
+  }
+
+  std::string_view data_;
+};
+
+// Export names of the AMDGPU code object |image| in export ordinal order:
+// the order of its amdhsa.kernels metadata, in which HRX's loader numbers the
+// exports (hrx_executable_export_info). An export is named by its .name, or
+// by its .symbol without the ".kd" suffix, as the loader names it. Returns
+// false with |error| set when |image| is not such a code object.
+bool amdgpu_export_names(std::string_view image,
+                         std::vector<std::string>& names, std::string& error) {
+  names.clear();
+  auto read = [&](uint64_t offset, unsigned size) -> std::optional<uint64_t> {
+    if (offset > image.size() || size > image.size() - offset) {
+      return std::nullopt;
+    }
+    uint64_t value = 0;
+    for (unsigned i = 0; i < size; ++i) {  // little-endian
+      value |= uint64_t(static_cast<uint8_t>(image[offset + i])) << (8 * i);
+    }
+    return value;
+  };
+  if (image.size() < 64 || image.substr(0, 4) != "\x7f" "ELF" ||
+      image[4] != 2 || image[5] != 1) {
+    error = "not a little-endian ELF64 code object";
+    return false;
+  }
+  const uint64_t section_offset = *read(0x28, 8);
+  const uint64_t section_size = *read(0x3a, 2);
+  const uint64_t section_count = *read(0x3c, 2);
+  constexpr uint32_t kSectionNote = 7;
+  constexpr uint32_t kNoteAmdgpuMetadata = 32;
+  bool found = false;
+  for (uint64_t i = 0; i < section_count && !found; ++i) {
+    const uint64_t header = section_offset + i * section_size;
+    const auto type = read(header + 4, 4);
+    const auto offset = read(header + 0x18, 8);
+    const auto size = read(header + 0x20, 8);
+    if (!type || !offset || !size || *offset > image.size() ||
+        *size > image.size() - *offset) {
+      error = "malformed section header";
+      return false;
+    }
+    if (*type != kSectionNote) {
+      continue;
+    }
+    // Notes: name size, descriptor size and type, then the name and the
+    // descriptor, each padded to 4 bytes.
+    for (uint64_t note = *offset; note + 12 <= *offset + *size;) {
+      const uint64_t name_size = *read(note, 4);
+      const uint64_t desc_size = *read(note + 4, 4);
+      const uint64_t note_type = *read(note + 8, 4);
+      const uint64_t name = note + 12;
+      const uint64_t desc = name + ((name_size + 3) & ~uint64_t(3));
+      const uint64_t next = desc + ((desc_size + 3) & ~uint64_t(3));
+      if (next > *offset + *size) {
+        error = "malformed note";
+        return false;
+      }
+      note = next;
+      if (note_type != kNoteAmdgpuMetadata ||
+          image.substr(name, name_size).substr(0, 6) != "AMDGPU") {
+        continue;
+      }
+      found = true;
+      MsgPackReader reader(image.substr(desc, desc_size));
+      uint64_t entries = 0;
+      if (!reader.read_map(entries)) {
+        error = "malformed AMDGPU metadata";
+        return false;
+      }
+      for (uint64_t entry = 0; entry < entries; ++entry) {
+        std::string_view key;
+        if (!reader.read_string(key)) {
+          error = "malformed AMDGPU metadata";
+          return false;
+        }
+        if (key != "amdhsa.kernels") {
+          if (!reader.skip()) {
+            error = "malformed AMDGPU metadata";
+            return false;
+          }
+          continue;
+        }
+        uint64_t kernels = 0;
+        if (!reader.read_array(kernels)) {
+          error = "malformed amdhsa.kernels";
+          return false;
+        }
+        for (uint64_t k = 0; k < kernels; ++k) {
+          uint64_t fields = 0;
+          if (!reader.read_map(fields)) {
+            error = "malformed amdhsa.kernels";
+            return false;
+          }
+          std::string_view kernel_name, symbol;
+          for (uint64_t f = 0; f < fields; ++f) {
+            std::string_view field;
+            if (!reader.read_string(field)) {
+              error = "malformed amdhsa.kernels";
+              return false;
+            }
+            std::string_view* value = field == ".name"     ? &kernel_name
+                                      : field == ".symbol" ? &symbol
+                                                           : nullptr;
+            if (value ? !reader.read_string(*value) : !reader.skip()) {
+              error = "malformed amdhsa.kernels";
+              return false;
+            }
+          }
+          if (kernel_name.empty() && symbol.ends_with(".kd")) {
+            kernel_name = symbol.substr(0, symbol.size() - 3);
+          }
+          names.emplace_back(kernel_name);
+        }
+      }
+      break;
+    }
+  }
+  if (!found) {
+    error = "no AMDGPU metadata note";
+    return false;
+  }
+  return true;
+}
+
+// ---------------------------------------------------------------------------
 // Driver
 // ---------------------------------------------------------------------------
 
@@ -479,6 +746,7 @@ class Driver {
   bool compile_device_module(const std::string& bytecode,
                              std::vector<std::string>& rejected);
   void read_argument_layouts(const loomc_result_t* result);
+  void read_export_ordinals();
   [[noreturn]] void device_failure(std::string_view stage,
                                    std::string_view log);
   void embed_device_code();
@@ -519,6 +787,8 @@ class Driver {
     std::vector<Argument> arguments;
   };
   std::unordered_map<std::string, ArgumentLayout> layouts_;
+  // Export ordinal of each compiled kernel in the code object, by export name.
+  std::unordered_map<std::string, uint32_t> export_ordinals_;
   std::string code_object_;
   int import_count_ = 0;
   int device_compile_count_ = 0;
@@ -1035,7 +1305,37 @@ bool Driver::compile_device_module(const std::string& bytecode,
     std::ofstream(temp_path("device.code"), std::ios::binary) << code_object_;
   }
   read_argument_layouts(result.get());
+  read_export_ordinals();
   return true;
+}
+
+// Numbers the exports of the code object as the runtime's loader does, so a
+// descriptor names its kernel by export ordinal.
+void Driver::read_export_ordinals() {
+  export_ordinals_.clear();
+  if (options_.loom_format != "amdgpu-hsaco") {
+    std::fprintf(stderr,
+                 "%s: error: kernel descriptors need the export ordinals of "
+                 "the code object, which loom-cxx reads only from the "
+                 "amdgpu-hsaco format, not '%s'\n",
+                 kTool.data(), options_.loom_format.c_str());
+    throw Failure{};
+  }
+  std::vector<std::string> names;
+  std::string error;
+  if (!amdgpu_export_names(code_object_, names, error)) {
+    std::fprintf(stderr, "%s: error: device code object: %s\n", kTool.data(),
+                 error.c_str());
+    throw Failure{};
+  }
+  for (size_t i = 0; i < names.size(); ++i) {
+    if (!export_ordinals_.emplace(names[i], static_cast<uint32_t>(i)).second) {
+      std::fprintf(stderr,
+                   "%s: error: device code object: export '%s' appears twice\n",
+                   kTool.data(), names[i].c_str());
+      throw Failure{};
+    }
+  }
 }
 
 // Reads the kernel argument layout of every compiled kernel export from the
@@ -1202,7 +1502,8 @@ void Driver::embed_device_code() {
 // available when the importer imported it and the device compiler compiled
 // it; its leaves take their kernel argument offsets and payload sizes from
 // the compiled kernel's layout, and the descriptor names this object's code
-// object. Other references get descriptors without the available flag.
+// object and the kernel's export ordinal in it. Other references get
+// descriptors without the available flag.
 void Driver::define_kernel_descriptors(llvm::GlobalVariable* code_object) {
   if (kernel_refs_.empty()) {
     return;
@@ -1213,7 +1514,7 @@ void Driver::define_kernel_descriptors(llvm::GlobalVariable* code_object) {
   auto* leaf_type = llvm::StructType::get(context, {i32, i32, i32, i32, i32});
   auto* descriptor_type = llvm::StructType::get(
       context, {i32, i32, pointer, llvm::ArrayType::get(i32, 3), i32, i32, i32,
-                pointer, pointer});
+                i32, pointer, pointer});
   auto u32 = [&](uint64_t value) -> llvm::Constant* {
     return llvm::ConstantInt::get(i32, value);
   };
@@ -1237,13 +1538,17 @@ void Driver::define_kernel_descriptors(llvm::GlobalVariable* code_object) {
     auto found = launches.find(symbol);
     const auto* launch = found == launches.end() ? nullptr : found->second;
     const ArgumentLayout* layout = nullptr;
+    uint32_t export_ordinal = 0;
     if (launch && launch->available && code_object) {
       auto layout_found = layouts_.find(launch->export_name);
-      if (layout_found == layouts_.end()) {
+      auto ordinal_found = export_ordinals_.find(launch->export_name);
+      if (layout_found == layouts_.end() ||
+          ordinal_found == export_ordinals_.end()) {
         fail(symbol, std::format("the device code object has no export '{}'",
                                  launch->export_name));
       }
       layout = &layout_found->second;
+      export_ordinal = ordinal_found->second;
     }
     const std::string name =
         launch && !launch->export_name.empty() ? launch->export_name : symbol;
@@ -1312,8 +1617,8 @@ void Driver::define_kernel_descriptors(llvm::GlobalVariable* code_object) {
         descriptor_type,
         {u32(kDescriptorVersion), u32(layout ? 1 : 0), name_global,
          llvm::ConstantArray::get(llvm::ArrayType::get(i32, 3), workgroup_size),
-         u32(segment_size), u32(parameter_count), u32(leaf_count), leaves,
-         code_object_reference});
+         u32(segment_size), u32(parameter_count), u32(leaf_count),
+         u32(export_ordinal), leaves, code_object_reference});
     // A local definition replaces the external declaration: no kernel_ref
     // symbol leaves the object, and no other object's descriptor can
     // satisfy (or replace) this object's references.

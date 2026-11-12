@@ -12,9 +12,8 @@
 // Host code names a kernel K by odr-using loom::kernel::kernel_ref<&K>; the
 // host compile only references that variable template specialization. Loom's
 // importer treats the same odr-use as a launch root and exports K. The
-// descriptor gives the host K's export name and how to pack its kernel
-// arguments, so the host can dispatch K without naming conventions or side
-// tables. loom-cxx compiles host and device code from one parse and defines
+// descriptor gives the host K's export and how to pack its kernel arguments,
+// so the host can dispatch K without naming conventions or side tables. loom-cxx compiles host and device code from one parse and defines
 // each descriptor the host references inside the host object, with local
 // linkage. Each object resolves its own references to its own descriptors,
 // which name the object's own embedded code object; no kernel_ref symbol is
@@ -24,8 +23,8 @@
 //
 // To launch, a host zero-fills |kernarg_size| bytes, copies each leaf's
 // |size| bytes from |source_offset| in the parameter object to
-// |kernarg_offset|, and dispatches the export named |name| with that buffer
-// as the kernel's explicit arguments.
+// |kernarg_offset|, and dispatches export |export_ordinal| of |code_object|
+// with that buffer as the kernel's explicit arguments.
 //
 // This header has no other dependencies so that host code can include it.
 
@@ -52,7 +51,8 @@ struct descriptor_leaf {
 inline constexpr unsigned int descriptor_leaf_scalar = 0;
 inline constexpr unsigned int descriptor_leaf_buffer = 1;
 
-inline constexpr unsigned int descriptor_version = 2;
+// Version 3 names the kernel by its export ordinal instead of by name.
+inline constexpr unsigned int descriptor_version = 3;
 // The kernel was imported. Without it the importer reached the kernel_ref but
 // dropped or excluded the kernel, and the descriptor names no device code.
 inline constexpr unsigned int descriptor_flag_available = 1u << 0;
@@ -64,7 +64,8 @@ struct descriptor {
   unsigned int version;
   // descriptor_flag_* bits.
   unsigned int flags;
-  // NUL-terminated export name of the kernel in the compiled executable.
+  // NUL-terminated export name of the kernel in the compiled executable, for
+  // diagnostics: launches use |export_ordinal|.
   const char* name;
   // Workgroup size fixed by a loom::workgroup_size annotation, or zeros when
   // the kernel's launch configuration computes it at dispatch.
@@ -75,8 +76,13 @@ struct descriptor {
   unsigned int parameter_count;
   // Number of entries in |leaves|, in kernel argument order.
   unsigned int leaf_count;
+  // Ordinal of the kernel's export in |code_object|: its index among the
+  // code object's kernels, in the order a loader numbers them (for an AMDGPU
+  // code object, the order of its amdhsa.kernels metadata). Zero when the
+  // kernel is unavailable.
+  unsigned int export_ordinal;
   const descriptor_leaf* leaves;
-  // The code object that exports |name| for this descriptor: the address
+  // The code object that exports the kernel for this descriptor: the address
   // loom-cxx passes to its registration function for the object's embedded
   // code object. Null when the kernel is unavailable.
   const void* code_object;
