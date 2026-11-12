@@ -1138,7 +1138,7 @@ void Functions::collect(cxx::DeclarationAST* declaration,
     return;
   }
   if (auto* function = cxx::ast_cast<cxx::FunctionDefinitionAST>(declaration)) {
-    // Error recovery (tolerant mode) can leave a definition without a symbol.
+    // A definition the frontend could not declare has no symbol.
     if (!function->symbol) {
       return;
     }
@@ -1266,7 +1266,7 @@ void Functions::collect(cxx::DeclarationAST* declaration,
           // unit is a host compile: its mutable globals are host storage that
           // device code cannot reference, so they are skipped like the rest
           // of the host-only code. Otherwise reject.
-          if (!hosted() && !diagnostics_.tolerates_host_errors()) {
+          if (!hosted()) {
             diagnostics_.reject(unit_, declarator,
                                 "global storage definitions require a "
                                 "global-storage projection");

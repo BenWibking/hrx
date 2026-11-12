@@ -114,13 +114,6 @@ void Diagnostics::report(const cxx::Diagnostic& diagnostic) {
     default:
       break;
   }
-  if (tolerate_host_errors_ && severity == LOOM_DIAGNOSTIC_ERROR) {
-    deferred_errors_.push_back(diagnostic.token());
-    // Marked so tooling can tell demoted errors from genuine warnings.
-    emit(diagnostic.token(), LOOM_DIAGNOSTIC_WARNING, LOOM_ERR_PARSE_036,
-         "deferred error: " + std::string(diagnostic.message()));
-    return;
-  }
   emit(diagnostic.token(), severity, LOOM_ERR_PARSE_036, diagnostic.message());
 }
 
@@ -282,8 +275,6 @@ Frontend::Frontend(iree_string_view_t filename,
   auto* preprocessor = unit_.preprocessor();
   contents_.bind(preprocessor, string(filename));
   diagnostics_.bind(&unit_, &contents_);
-  diagnostics_.set_tolerate_host_errors(
-      options.flags & LOOM_CXX_IMPORT_FLAG_TOLERATE_HOST_ERRORS);
   if (options.flags & LOOM_CXX_IMPORT_FLAG_HOSTED) {
     toolchain_ = make_hosted_toolchain(preprocessor, options);
   } else {

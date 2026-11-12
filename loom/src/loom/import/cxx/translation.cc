@@ -137,60 +137,6 @@ class Translator final : private Initialization::Evaluation {
                             loom_module_block(module_), &builder_);
   }
 
-  // A deferred frontend error inside any lowered definition means its device
-  // code may be incomplete; fail rather than emit a partial program.
-  void reject_deferred_errors_in_lowered_code() {
-    for (size_t index = 0; index < functions_.pending().size(); ++index) {
-      reject_deferred_errors_in(index);
-    }
-  }
-
-  void reject_deferred_errors_in(size_t index) {
-    const auto& errors = diagnostics_.deferred_errors();
-    if (errors.empty()) {
-      return;
-    }
-    {
-      const auto& instance = functions_.pending()[index];
-      auto* concrete = functions_.definition(instance.symbol);
-      // Template instances share the pattern's source range with every other
-      // instantiation, including ones only the device pass's frontend formed
-      // (and failed). Their genuine errors surface as untyped expressions.
-      auto from_template = [](cxx::FunctionSymbol* function) {
-        if (function->isSpecialization()) return true;
-        for (auto* owner : function->enclosingSymbols()) {
-          if (auto* f = cxx::symbol_cast<cxx::FunctionSymbol>(owner);
-              f && f->isSpecialization()) {
-            return true;
-          }
-          if (auto* c = cxx::symbol_cast<cxx::ClassSymbol>(owner);
-              c && c->isSpecialization()) {
-            return true;
-          }
-        }
-        return false;
-      };
-      if (concrete && from_template(concrete)) {
-        return;
-      }
-      auto* ast = concrete ? concrete->declaration() : nullptr;
-      if (!ast) {
-        return;
-      }
-      const auto& first = unit_.tokenAt(ast->firstSourceLocation());
-      const auto& last = unit_.tokenAt(ast->lastSourceLocation());
-      for (const auto& error : errors) {
-        if (error.fileId() == first.fileId() &&
-            error.offset() >= first.offset() &&
-            error.offset() <= last.offset()) {
-          diagnostics_.reject(unit_, ast,
-                              "lowered definition contains a C++ frontend "
-                              "error reported above");
-        }
-      }
-    }
-  }
-
   void translate(const std::unordered_set<cxx::FunctionSymbol*>* excluded,
                  std::vector<KernelLaunch>* out_kernel_launches) {
     const bool drop = excluded != nullptr;
@@ -212,20 +158,7 @@ class Translator final : private Initialization::Evaluation {
       }
     }
     functions_.set_current_origin(nullptr);
-    if (drop) {
-      for (size_t index = 0; index < functions_.pending().size(); ++index) {
-        try {
-          reject_deferred_errors_in(index);
-        } catch (const SourceRejected&) {
-          if (auto* origin = functions_.pending_origin(index)) {
-            throw KernelRejected{origin};
-          }
-          throw;
-        }
-      }
-    }
     diagnostics_.set_soft_reject(false);
-    reject_deferred_errors_in_lowered_code();
     functions_.build_declarations(types_, locations_, &builder_);
     functions_.build_benchmarks(locations_, &builder_);
     immutable_objects_.build(&builder_);
@@ -8298,7 +8231,7 @@ class Translator final : private Initialization::Evaluation {
 
   void effect(cxx::ExpressionAST* ast) override {
     if (!ast->type) {
-      // Frontend error recovery (tolerated host errors) left no type.
+      // Only an expression the frontend could not type has none.
       fail(ast, "expression has no resolved C++ type");
     }
     if (auto* binary = cxx::ast_cast<cxx::BinaryExpressionAST>(ast);

@@ -43,8 +43,6 @@ IREE_FLAG(bool, hosted, false,
           "Hosted single-source profile: parse as a host compile for --triple "
           "(an x86_64 or aarch64 Linux triple) with exceptions disabled; "
           "helpers declaring workgroup storage are required-inline.");
-IREE_FLAG_NAMED(bool, tolerate_host_errors, "tolerate-host-errors", false,
-                "Report frontend errors in host-only code as warnings.");
 IREE_FLAG_NAMED(bool, drop_failed_kernels, "drop-failed-kernels", false,
                 "Drop launched kernels that cannot be imported instead of "
                 "rejecting the translation unit.");
@@ -125,9 +123,6 @@ static iree_status_t loom_cxx_cli_options_from_flags(
     out_options->flags |= LOOMC_CXX_IMPORT_FLAG_NO_BUILTIN_INCLUDES;
   }
   if (FLAG_hosted) out_options->flags |= LOOMC_CXX_IMPORT_FLAG_HOSTED;
-  if (FLAG_tolerate_host_errors) {
-    out_options->flags |= LOOMC_CXX_IMPORT_FLAG_TOLERATE_HOST_ERRORS;
-  }
   if (FLAG_drop_failed_kernels) {
     out_options->flags |= LOOMC_CXX_IMPORT_FLAG_DROP_FAILED_KERNELS;
   }

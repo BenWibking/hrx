@@ -978,24 +978,6 @@ TEST_F(LaunchedImportTest, KernelDescriptorsAreOptional) {
   EXPECT_FALSE(std::filesystem::exists(descriptors_path_));
 }
 
-TEST_F(LaunchedImportTest, TolerateHostErrorsDefersErrorsInHostOnlyCode) {
-  std::string source = std::string(kLaunchedSource) +
-                       "void host_only() { undeclared_function(); }\n";
-  const auto view = iree_make_string_view(source.data(), source.size());
-  IREE_ASSERT_OK(Import(view));
-  EXPECT_EQ(module_, nullptr);
-  EXPECT_GT(error_count_, 0);
-
-  error_count_ = 0;
-  diagnostic_count_ = 0;
-  options_.flags |= LOOM_CXX_IMPORT_FLAG_TOLERATE_HOST_ERRORS;
-  IREE_ASSERT_OK(Import(view));
-  ASSERT_NE(module_, nullptr);
-  EXPECT_EQ(error_count_, 0);
-  EXPECT_GT(diagnostic_count_, 0);  // reported as a deferred-error warning
-  EXPECT_NE(Print().find("@run__4Body"), std::string::npos);
-}
-
 // A unit is parsed once and imported from its existing translation unit, as
 // a single-source driver does after generating host code from it.
 TEST_F(LaunchedImportTest, ParsedUnitImportsWithoutReparsing) {

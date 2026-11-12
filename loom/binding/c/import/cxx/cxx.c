@@ -38,10 +38,6 @@ IREE_STATIC_ASSERT_ENUM_EQ(LOOMC_CXX_IMPORT_FLAG_HOSTED,
                            LOOM_CXX_IMPORT_FLAG_HOSTED,
                            "public hosted flag matches the native importer");
 IREE_STATIC_ASSERT_ENUM_EQ(
-    LOOMC_CXX_IMPORT_FLAG_TOLERATE_HOST_ERRORS,
-    LOOM_CXX_IMPORT_FLAG_TOLERATE_HOST_ERRORS,
-    "public tolerate-host-errors flag matches the native importer");
-IREE_STATIC_ASSERT_ENUM_EQ(
     LOOMC_CXX_IMPORT_FLAG_DROP_FAILED_KERNELS,
     LOOM_CXX_IMPORT_FLAG_DROP_FAILED_KERNELS,
     "public drop-failed-kernels flag matches the native importer");

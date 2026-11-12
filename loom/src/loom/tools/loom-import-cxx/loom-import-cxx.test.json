@@ -91,7 +91,6 @@
           "--root=@launched",
           "--hosted",
           "--triple=x86_64-linux-gnu",
-          "--tolerate-host-errors",
           "--drop-failed-kernels",
           "--kernel-descriptors={tmp}/kernels.s",
           "--exclude-kernel=run__5Other",
@@ -99,7 +98,7 @@
         ]
       },
       "stdin": {
-        "text": "#include <loomcxx/kernel.h>\n#ifndef __linux__\n#error hosted profile expected\n#endif\nstatic loom::kernel::configuration launch_config(unsigned groups) {\n  return {{groups, 1, 1}, {64, 1, 1}};\n}\ntemplate <class T>\n[[loom::kernel(launch_config), loom::kernel_type_symbol]]\nvoid run(T tag) { tag(); }\nstruct Body {\n  float a;\n  float* y;\n  [[loom::inline]] void operator()() const { y[0] = a; }\n};\nstruct Other {\n  float* y;\n  [[loom::inline]] void operator()() const { y[0] = 1.0f; }\n};\nvoid host(float* y) {\n  (void)&loom::kernel::kernel_ref<&run<Body>>;\n  loom::kernel::launch<run<Other>>(loom::kernel::workload(1u), Other{y});\n  undeclared_host_function();\n}\n"
+        "text": "#include <loomcxx/kernel.h>\n#ifndef __linux__\n#error hosted profile expected\n#endif\nstatic loom::kernel::configuration launch_config(unsigned groups) {\n  return {{groups, 1, 1}, {64, 1, 1}};\n}\ntemplate <class T>\n[[loom::kernel(launch_config), loom::kernel_type_symbol]]\nvoid run(T tag) { tag(); }\nstruct Body {\n  float a;\n  float* y;\n  [[loom::inline]] void operator()() const { y[0] = a; }\n};\nstruct Other {\n  float* y;\n  [[loom::inline]] void operator()() const { y[0] = 1.0f; }\n};\nvoid host(float* y) {\n  (void)&loom::kernel::kernel_ref<&run<Body>>;\n  loom::kernel::launch<run<Other>>(loom::kernel::workload(1u), Other{y});\n}\n"
       },
       "stdout": {
         "contains": [

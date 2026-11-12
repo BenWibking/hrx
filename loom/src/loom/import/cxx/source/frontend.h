@@ -14,7 +14,6 @@
 #include <cstdint>
 #include <string>
 #include <string_view>
-#include <vector>
 
 #include "loom/import/cxx/source/contents.h"
 #include "loom/import/cxx/source/options.h"
@@ -57,17 +56,6 @@ class Diagnostics final : public cxx::DiagnosticsClient {
   // kernel can be dropped without failing the whole translation unit.
   void set_soft_reject(bool soft) { soft_reject_ = soft; }
   bool soft_reject() const { return soft_reject_; }
-  // A single-source device pass parses host-only code it never lowers. When
-  // set (LOOM_CXX_IMPORT_FLAG_TOLERATE_HOST_ERRORS), frontend errors are
-  // reported as warnings and become fatal only inside lowered definitions.
-  void set_tolerate_host_errors(bool tolerate) {
-    tolerate_host_errors_ = tolerate;
-  }
-  bool tolerates_host_errors() const { return tolerate_host_errors_; }
-  // Frontend errors deferred while tolerating host errors.
-  const std::vector<cxx::Token>& deferred_errors() const {
-    return deferred_errors_;
-  }
   // Propagates sink failure and source rejection at a parser-safe boundary.
   // cxx forwards diagnostics from noexcept destructors, so report never throws.
   void finish();
@@ -87,9 +75,6 @@ class Diagnostics final : public cxx::DiagnosticsClient {
   // Forwarded diagnostics can bypass cxx's counter; this owns admission.
   bool has_error_ = false;
   bool soft_reject_ = false;
-  bool tolerate_host_errors_ = false;
-  // Frontend error positions downgraded to warnings in tolerant mode.
-  std::vector<cxx::Token> deferred_errors_;
   // First sink failure, retained until a safe point can unwind the frontend.
   iree_status_t status_ = iree_ok_status();
 };

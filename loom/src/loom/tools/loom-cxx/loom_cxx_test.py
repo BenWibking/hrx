@@ -777,7 +777,6 @@ extern "C" reference via_{name}() {{ return &shared_ref; }}
         )
         self.assertIn("undeclared_name", stderr)
         self.assertIn("error", stderr)
-        self.assertNotIn("deferred error", stderr)
 
 
 def main():
