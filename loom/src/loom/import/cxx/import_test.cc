@@ -788,11 +788,11 @@ TEST_F(LaunchedImportTest, ExcludedKernelsAreOmittedFromLaunchedRoots) {
 }
 
 TEST_F(LaunchedImportTest, DropFailedKernelsKeepsTheOtherKernels) {
-  // nullptr is not importable in device code; only run<Bad> uses it.
+  // Comparing nonnull pointers is not importable; only run<Bad> does it.
   std::string source = std::string(kLaunchedSource) + R"cxx(
 struct Bad {
   float* y;
-  [[loom::inline]] void operator()() const { if (y != nullptr) y[0] = 2.0f; }
+  [[loom::inline]] void operator()() const { if (y != y + 1) y[0] = 2.0f; }
 };
 void host_bad(float* y) {
   loom::kernel::launch<run<Bad>>(loom::kernel::workload(1u), Bad{y});
@@ -953,7 +953,7 @@ TEST_F(LaunchedImportTest, DroppedKernelRefKernelsKeepUnavailableDescriptors) {
   std::string source = std::string(kKernelRefSource) + R"cxx(
 struct Bad {
   float* y;
-  [[loom::inline]] void operator()() const { if (y != nullptr) y[0] = 2.0f; }
+  [[loom::inline]] void operator()() const { if (y != y + 1) y[0] = 2.0f; }
 };
 const loom::kernel::descriptor* host_bad() { return describe<Bad>(); }
 )cxx";
@@ -1173,7 +1173,7 @@ TEST_F(LaunchedImportTest, ParsedUnitDiagnosticsFollowTheImportSink) {
   std::string source = std::string(kKernelRefSource) + R"cxx(
 struct Bad {
   float* y;
-  [[loom::inline]] void operator()() const { if (y != nullptr) y[0] = 2.0f; }
+  [[loom::inline]] void operator()() const { if (y != y + 1) y[0] = 2.0f; }
 };
 const loom::kernel::descriptor* host_bad() { return describe<Bad>(); }
 )cxx";

@@ -456,7 +456,7 @@ const loom::kernel::descriptor* host_entry() {
             + """
 struct Bad {
   float* y;
-  [[loom::inline]] void operator()() const { if (y != nullptr) y[0] = 2.0f; }
+  [[loom::inline]] void operator()() const { if (y != y + 1) y[0] = 2.0f; }
 };
 const loom::kernel::descriptor* good() {
   return &loom::kernel::kernel_ref<&run<Body>>;
@@ -537,7 +537,7 @@ const loom::kernel::descriptor* entries(int i) {
             + """
 struct Bad {
   float* y;
-  [[loom::inline]] void operator()() const { if (y != nullptr) y[0] = 2.0f; }
+  [[loom::inline]] void operator()() const { if (y != y + 1) y[0] = 2.0f; }
 };
 const loom::kernel::descriptor* good() {
   return &loom::kernel::kernel_ref<&run<Body>>;
@@ -820,7 +820,7 @@ int main(void) {
         # loom-cxx makes local rather than leaving one copy to the linker).
         objects = []
         for name, body in (
-            ("a", "if (y != nullptr) y[0] = 2.0f;"),  # rejected: dropped
+            ("a", "if (y != y + 1) y[0] = 2.0f;"),  # rejected: dropped
             ("b", "y[0] = 2.0f;"),
         ):
             elf, _, _ = self.compile(
