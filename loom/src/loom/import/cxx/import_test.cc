@@ -942,7 +942,7 @@ TEST_F(KernelRefImportTest, DroppedKernelRefKernelsKeepUnavailableDescriptors) {
   std::string source = std::string(kKernelRefSource) + R"cxx(
 struct Bad {
   float* y;
-  [[loom::inline]] void operator()() const { if (y != y + 1) y[0] = 2.0f; }
+  [[loom::inline]] void operator()() const { if (y < y + 1) y[0] = 2.0f; }
 };
 const loom::kernel::descriptor* host_bad() { return describe<Bad>(); }
 )cxx";
@@ -1151,7 +1151,7 @@ TEST_F(KernelRefImportTest, ParsedUnitDiagnosticsFollowTheImportSink) {
   std::string source = std::string(kKernelRefSource) + R"cxx(
 struct Bad {
   float* y;
-  [[loom::inline]] void operator()() const { if (y != y + 1) y[0] = 2.0f; }
+  [[loom::inline]] void operator()() const { if (y < y + 1) y[0] = 2.0f; }
 };
 const loom::kernel::descriptor* host_bad() { return describe<Bad>(); }
 )cxx";
