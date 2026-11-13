@@ -46,7 +46,7 @@ func.def inline @Saxpy__operator_call_value(%this_a: f32, %this_x: buffer, %this
   %26 = scalar.assume %25 [range(%25, 0, 9223372036854775807)] : i64
   %27 = index.cast %26 : i64 to offset
   %28 = buffer.view %this_x[%27] : buffer -> view<1xf32>
-  %29 = view.load %28[0] : view<1xf32> -> f32
+  %29 = view.load<root_in_bounds> %28[0] : view<1xf32> -> f32
   %30 = scalar.mulf %this_a, %29 : f32
   %31 = scalar.extui %i : i32 to i64
   %32 = scalar.constant 4 : i64
@@ -56,7 +56,7 @@ func.def inline @Saxpy__operator_call_value(%this_a: f32, %this_x: buffer, %this
   %36 = scalar.assume %35 [range(%35, 0, 9223372036854775807)] : i64
   %37 = index.cast %36 : i64 to offset
   %38 = buffer.view %this_y[%37] : buffer -> view<1xf32>
-  %39 = view.load %38[0] : view<1xf32> -> f32
+  %39 = view.load<root_in_bounds> %38[0] : view<1xf32> -> f32
   %40 = scalar.addf %30, %39 : f32
   %41 = scalar.extui %i : i32 to i64
   %42 = scalar.constant 4 : i64
@@ -66,7 +66,7 @@ func.def inline @Saxpy__operator_call_value(%this_a: f32, %this_x: buffer, %this
   %46 = scalar.assume %45 [range(%45, 0, 9223372036854775807)] : i64
   %47 = index.cast %46 : i64 to offset
   %48 = buffer.view %this_y[%47] : buffer -> view<1xf32>
-  view.store %40, %48[0] : f32, view<1xf32>
+  view.store<root_in_bounds> %40, %48[0] : f32, view<1xf32>
   func.return
 }
 
@@ -131,7 +131,7 @@ kernel.def @apply_const__lambda_float__float__const_() {
   %27 = scalar.assume %26 [range(%26, 0, 9223372036854775807)] : i64
   %28 = index.cast %27 : i64 to offset
   %29 = buffer.view %y[%28] : buffer -> view<1xf32>
-  %30 = view.load %29[0] : view<1xf32> -> f32
+  %30 = view.load<root_in_bounds> %29[0] : view<1xf32> -> f32
   %31 = func.call pure @operator_call_value(%body_scale, %body_bias, %30) : (f32, f32, f32) -> (f32)
   %32 = scalar.extui %i : i32 to i64
   %33 = scalar.constant 4 : i64
@@ -141,7 +141,7 @@ kernel.def @apply_const__lambda_float__float__const_() {
   %37 = scalar.assume %36 [range(%36, 0, 9223372036854775807)] : i64
   %38 = index.cast %37 : i64 to offset
   %39 = buffer.view %y[%38] : buffer -> view<1xf32>
-  view.store %31, %39[0] : f32, view<1xf32>
+  view.store<root_in_bounds> %31, %39[0] : f32, view<1xf32>
   kernel.return
 }
 
@@ -196,11 +196,11 @@ kernel.def @run_body__lambda_void__unsigned_int__const_() {
   %i = index.cast %workitem_id_x : index to i32
   %14 = scalar.cmpi ult, %i, %n : i32
   scf.if %14 {
-    func.call pure @operator_call_value(%body_a, %body_y, %i) : (f32, buffer, i32)
+    func.call pure @operator_call_value(%i) : (i32)
   }
   kernel.return
 }
 
-func.def @operator_call_value(%this_a: f32, %this_y: buffer, %i: i32) {
+func.def @operator_call_value(%i: i32) {
   func.return
 }
