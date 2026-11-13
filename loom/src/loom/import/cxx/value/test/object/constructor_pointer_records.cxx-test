@@ -43,137 +43,123 @@ int direct(Box box, long i) {
 // ----
 func.def public @range_for(%box_lo: i32, %box_hi: i32) -> (i32) {
   %sum$3 = scalar.constant 0 : i32
-  %4 = index.constant 16 : offset
-  %5 = buffer.alloca<private> align(8) %4 : buffer
-  %6 = index.constant 0 : offset
-  func.call @Range__Range_storage(%5, %6, %box_lo, %box_hi) : (buffer, offset, i32, i32)
-  %13 = buffer.view %5[%6] : buffer -> view<1xi32>
-  %14 = view.load %13[0] : view<1xi32> -> i32
-  %232 = index.constant 4 : offset
-  %18 = buffer.view %5[%232] : buffer -> view<1xi32>
-  %19 = view.load %18[0] : view<1xi32> -> i32
-  %231 = index.constant 8 : offset
-  %23 = buffer.view %5[%231] : buffer -> view<1xi64>
-  %24 = view.load %23[0] : view<1xi64> -> i64
-  %26 = buffer.alloca<private> align(8) %4 : buffer
-  %34 = buffer.view %26[%6] : buffer -> view<1xi32>
-  view.store %14, %34[0] : i32, view<1xi32>
-  %38 = buffer.view %26[%232] : buffer -> view<1xi32>
-  view.store %19, %38[0] : i32, view<1xi32>
-  %42 = buffer.view %26[%231] : buffer -> view<1xi64>
-  view.store %24, %42[0] : i64, view<1xi64>
-  %_mi_b$43, %_mi_b_byte_offset$44, %_mi_i$45, %_mi_s$46 = func.call pure @Range__begin_storage(%26, %6) : (buffer, offset) -> (buffer, offset, i64, i64)
-  %_mi_b$47, %_mi_b_byte_offset$48, %_mi_i$49, %_mi_s$50 = func.call readonly @Range__end_storage(%26, %6) : (buffer, offset) -> (buffer, offset, i64, i64)
-  %_mi_b$61, %_mi_b_byte_offset$62, %_mi_i$63, %_mi_s$64, %sum$65 = scf.while(%_mi_b = %_mi_b$43 : buffer, %_mi_b_byte_offset = %_mi_b_byte_offset$44 : offset, %_mi_i = %_mi_i$45 : i64, %_mi_s = %_mi_s$46 : i64, %sum = %sum$3 : i32) -> (buffer, offset, i64, i64, i32) {
-    %66 = func.call pure @Range__iterator__operator_not_equal_value(%_mi_b, %_mi_b_byte_offset, %_mi_i, %_mi_s, %_mi_b$47, %_mi_b_byte_offset$48, %_mi_i$49, %_mi_s$50) : (buffer, offset, i64, i64, buffer, offset, i64, i64) -> (i1)
-    scf.condition %66, %_mi_b, %_mi_b_byte_offset, %_mi_i, %_mi_s, %sum : i1, buffer, offset, i64, i64, i32
-  } do(%_mi_b: buffer, %_mi_b_byte_offset: offset, %_mi_i$58: i64, %_mi_s: i64, %sum$60: i32) {
-    %v = func.call readonly @Range__iterator__operator_dereference_value(%_mi_b, %_mi_b_byte_offset, %_mi_i$58, %_mi_s) : (buffer, offset, i64, i64) -> (i32)
-    %sum$68 = scalar.addi %sum$60, %v : i32
-    %_mi_i$69 = func.call pure @Range__iterator__operator_pre_increment_value(%_mi_b, %_mi_b_byte_offset, %_mi_i$58, %_mi_s) : (buffer, offset, i64, i64) -> (i64)
-    scf.yield %_mi_b, %_mi_b_byte_offset, %_mi_i$69, %_mi_s, %sum$68 : buffer, offset, i64, i64, i32
+  %4, %5, %6 = func.call pure @Range__Range_value(%box_lo, %box_hi) : (i32, i32) -> (i32, i32, i64)
+  %7 = index.constant 16 : offset
+  %8 = buffer.alloca<private> align(8) %7 : buffer
+  %9 = index.constant 0 : offset
+  %16 = buffer.view %8[%9] : buffer -> view<1xi32>
+  view.store %4, %16[0] : i32, view<1xi32>
+  %185 = index.constant 4 : offset
+  %20 = buffer.view %8[%185] : buffer -> view<1xi32>
+  view.store %5, %20[0] : i32, view<1xi32>
+  %184 = index.constant 8 : offset
+  %24 = buffer.view %8[%184] : buffer -> view<1xi64>
+  view.store %6, %24[0] : i64, view<1xi64>
+  %_mi_b$25, %_mi_b_byte_offset$26, %_mi_i$27, %_mi_s$28 = func.call pure @Range__begin_storage(%8, %9) : (buffer, offset) -> (buffer, offset, i64, i64)
+  %_mi_b$29, %_mi_b_byte_offset$30, %_mi_i$31, %_mi_s$32 = func.call readonly @Range__end_storage(%8, %9) : (buffer, offset) -> (buffer, offset, i64, i64)
+  %sum$43, %_mi_b$44, %_mi_b_byte_offset$45, %_mi_i$46, %_mi_s$47 = scf.while(%sum = %sum$3 : i32, %_mi_b = %_mi_b$25 : buffer, %_mi_b_byte_offset = %_mi_b_byte_offset$26 : offset, %_mi_i = %_mi_i$27 : i64, %_mi_s = %_mi_s$28 : i64) -> (i32, buffer, offset, i64, i64) {
+    %48 = func.call pure @Range__iterator__operator_not_equal_value(%_mi_i, %_mi_i$31) : (i64, i64) -> (i1)
+    scf.condition %48, %sum, %_mi_b, %_mi_b_byte_offset, %_mi_i, %_mi_s : i1, i32, buffer, offset, i64, i64
+  } do(%sum$38: i32, %_mi_b: buffer, %_mi_b_byte_offset: offset, %_mi_i$41: i64, %_mi_s: i64) {
+    %v = func.call readonly @Range__iterator__operator_dereference_value(%_mi_b, %_mi_b_byte_offset, %_mi_i$41) : (buffer, offset, i64) -> (i32)
+    %sum$50 = scalar.addi %sum$38, %v : i32
+    %_mi_i$51 = func.call pure @Range__iterator__operator_pre_increment_value(%_mi_i$41, %_mi_s) : (i64, i64) -> (i64)
+    scf.yield %sum$50, %_mi_b, %_mi_b_byte_offset, %_mi_i$51, %_mi_s : i32, buffer, offset, i64, i64
   }
-  func.return %sum$65 : i32
+  func.return %sum$43 : i32
 }
 
 func.def public @hand_loop(%box_lo: i32, %box_hi: i32) -> (i32) {
-  %73 = index.constant 16 : offset
-  %range_storage = buffer.alloca<private> align(8) %73 : buffer
+  %55 = index.constant 16 : offset
+  %range_storage = buffer.alloca<private> align(8) %55 : buffer
   %range_storage_byte_offset = index.constant 0 : offset
   func.call @Range__Range_storage(%range_storage, %range_storage_byte_offset, %box_lo, %box_hi) : (buffer, offset, i32, i32)
-  %sum$77 = scalar.constant 0 : i32
-  %it_mi_b$78, %it_mi_b_byte_offset$79, %it_mi_i$80, %it_mi_s$81 = func.call pure @Range__begin_storage(%range_storage, %range_storage_byte_offset) : (buffer, offset) -> (buffer, offset, i64, i64)
-  %it_mi_b$92, %it_mi_b_byte_offset$93, %it_mi_i$94, %it_mi_s$95, %sum$96 = scf.while(%it_mi_b = %it_mi_b$78 : buffer, %it_mi_b_byte_offset = %it_mi_b_byte_offset$79 : offset, %it_mi_i = %it_mi_i$80 : i64, %it_mi_s = %it_mi_s$81 : i64, %sum = %sum$77 : i32) -> (buffer, offset, i64, i64, i32) {
-    %97, %98, %99, %100 = func.call readonly @Range__end_storage(%range_storage, %range_storage_byte_offset) : (buffer, offset) -> (buffer, offset, i64, i64)
-    %101 = func.call pure @Range__iterator__operator_not_equal_value(%it_mi_b, %it_mi_b_byte_offset, %it_mi_i, %it_mi_s, %97, %98, %99, %100) : (buffer, offset, i64, i64, buffer, offset, i64, i64) -> (i1)
-    scf.condition %101, %it_mi_b, %it_mi_b_byte_offset, %it_mi_i, %it_mi_s, %sum : i1, buffer, offset, i64, i64, i32
-  } do(%it_mi_b: buffer, %it_mi_b_byte_offset: offset, %it_mi_i$89: i64, %it_mi_s: i64, %sum$91: i32) {
-    %102 = func.call readonly @Range__iterator__operator_dereference_value(%it_mi_b, %it_mi_b_byte_offset, %it_mi_i$89, %it_mi_s) : (buffer, offset, i64, i64) -> (i32)
-    %sum$103 = scalar.addi %sum$91, %102 : i32
-    %it_mi_i$104 = func.call pure @Range__iterator__operator_pre_increment_value(%it_mi_b, %it_mi_b_byte_offset, %it_mi_i$89, %it_mi_s) : (buffer, offset, i64, i64) -> (i64)
-    scf.yield %it_mi_b, %it_mi_b_byte_offset, %it_mi_i$104, %it_mi_s, %sum$103 : buffer, offset, i64, i64, i32
+  %sum$59 = scalar.constant 0 : i32
+  %it_mi_b$60, %it_mi_b_byte_offset$61, %it_mi_i$62, %it_mi_s$63 = func.call pure @Range__begin_storage(%range_storage, %range_storage_byte_offset) : (buffer, offset) -> (buffer, offset, i64, i64)
+  %sum$74, %it_mi_b$75, %it_mi_b_byte_offset$76, %it_mi_i$77, %it_mi_s$78 = scf.while(%sum = %sum$59 : i32, %it_mi_b = %it_mi_b$60 : buffer, %it_mi_b_byte_offset = %it_mi_b_byte_offset$61 : offset, %it_mi_i = %it_mi_i$62 : i64, %it_mi_s = %it_mi_s$63 : i64) -> (i32, buffer, offset, i64, i64) {
+    %79, %80, %81, %82 = func.call readonly @Range__end_storage(%range_storage, %range_storage_byte_offset) : (buffer, offset) -> (buffer, offset, i64, i64)
+    %83 = func.call pure @Range__iterator__operator_not_equal_value(%it_mi_i, %81) : (i64, i64) -> (i1)
+    scf.condition %83, %sum, %it_mi_b, %it_mi_b_byte_offset, %it_mi_i, %it_mi_s : i1, i32, buffer, offset, i64, i64
+  } do(%sum$69: i32, %it_mi_b: buffer, %it_mi_b_byte_offset: offset, %it_mi_i$72: i64, %it_mi_s: i64) {
+    %84 = func.call readonly @Range__iterator__operator_dereference_value(%it_mi_b, %it_mi_b_byte_offset, %it_mi_i$72) : (buffer, offset, i64) -> (i32)
+    %sum$85 = scalar.addi %sum$69, %84 : i32
+    %it_mi_i$86 = func.call pure @Range__iterator__operator_pre_increment_value(%it_mi_i$72, %it_mi_s) : (i64, i64) -> (i64)
+    scf.yield %sum$85, %it_mi_b, %it_mi_b_byte_offset, %it_mi_i$86, %it_mi_s : i32, buffer, offset, i64, i64
   }
-  func.return %sum$96 : i32
+  func.return %sum$74 : i32
 }
 
 func.def public @direct(%box_lo: i32, %box_hi: i32, %i: i64) -> (i32) {
-  %109 = index.constant 8 : offset
-  %box_storage = buffer.alloca<private> align(4) %109 : buffer
+  %91 = index.constant 8 : offset
+  %box_storage = buffer.alloca<private> align(4) %91 : buffer
   %box_storage_byte_offset = index.constant 0 : offset
-  %116 = buffer.view %box_storage[%box_storage_byte_offset] : buffer -> view<1xi32>
-  view.store %box_lo, %116[0] : i32, view<1xi32>
-  %235 = index.constant 4 : offset
-  %120 = buffer.view %box_storage[%235] : buffer -> view<1xi32>
-  view.store %box_hi, %120[0] : i32, view<1xi32>
+  %98 = buffer.view %box_storage[%box_storage_byte_offset] : buffer -> view<1xi32>
+  view.store %box_lo, %98[0] : i32, view<1xi32>
+  %188 = index.constant 4 : offset
+  %102 = buffer.view %box_storage[%188] : buffer -> view<1xi32>
+  view.store %box_hi, %102[0] : i32, view<1xi32>
   %it_mi_s = scalar.constant 1 : i64
-  %it_mi_i = func.call pure @Range__iterator__operator_pre_increment_value(%box_storage, %box_storage_byte_offset, %i, %it_mi_s) : (buffer, offset, i64, i64) -> (i64)
-  %124 = func.call readonly @Range__iterator__operator_dereference_value(%box_storage, %box_storage_byte_offset, %it_mi_i, %it_mi_s) : (buffer, offset, i64, i64) -> (i32)
-  func.return %124 : i32
+  %it_mi_i = func.call pure @Range__iterator__operator_pre_increment_value(%i, %it_mi_s) : (i64, i64) -> (i64)
+  %106 = func.call readonly @Range__iterator__operator_dereference_value(%box_storage, %box_storage_byte_offset, %it_mi_i) : (buffer, offset, i64) -> (i32)
+  func.return %106 : i32
 }
 
-func.def inline @Range__Range_storage(%this: buffer, %this_byte_offset: offset, %b_lo: i32, %b_hi: i32) {
-  %133 = buffer.length %this
-  %134 = index.constant 4 : offset
-  %135 = index.sub %133, %134 : offset
-  %136 = index.assume %this_byte_offset [range(%this_byte_offset, 0, %135)] : offset
-  %137 = buffer.view %this[%136] : buffer -> view<1xi32>
-  view.store %b_lo, %137[0] : i32, view<1xi32>
-  %139 = index.add %this_byte_offset, %134 : offset
-  %143 = index.assume %139 [range(%139, 0, %135)] : offset
-  %144 = buffer.view %this[%143] : buffer -> view<1xi32>
-  view.store %b_hi, %144[0] : i32, view<1xi32>
-  %145 = index.constant 8 : offset
-  %146 = index.add %this_byte_offset, %145 : offset
-  %147 = scalar.subi %b_hi, %b_lo : i32
-  %148 = scalar.extsi %147 : i32 to i64
-  %151 = index.sub %133, %145 : offset
-  %152 = index.assume %146 [range(%146, 0, %151)] : offset
-  %153 = buffer.view %this[%152] : buffer -> view<1xi64>
-  view.store %148, %153[0] : i64, view<1xi64>
-  func.return
+func.def inline @Range__Range_value(%b_lo: i32, %b_hi: i32) -> (i32, i32, i64) {
+  %112 = scalar.subi %b_hi, %b_lo : i32
+  %113 = scalar.extsi %112 : i32 to i64
+  func.return %b_lo, %b_hi, %113 : i32, i32, i64
 }
 
 func.def @Range__begin_storage(%this: buffer, %this_byte_offset: offset) -> (buffer, offset, i64, i64) {
-  %238 = scalar.constant 0 : i64
-  %237 = scalar.constant 1 : i64
-  func.return %this, %this_byte_offset, %238, %237 : buffer, offset, i64, i64
+  %191 = scalar.constant 0 : i64
+  %190 = scalar.constant 1 : i64
+  func.return %this, %this_byte_offset, %191, %190 : buffer, offset, i64, i64
 }
 
 func.def @Range__end_storage(%this: buffer, %this_byte_offset: offset) -> (buffer, offset, i64, i64) {
-  %174 = index.constant 8 : offset
-  %175 = index.add %this_byte_offset, %174 : offset
-  %176 = buffer.length %this
-  %178 = index.sub %176, %174 : offset
-  %179 = index.assume %175 [range(%175, 0, %178)] : offset
-  %180 = buffer.view %this[%179] : buffer -> view<1xi64>
-  %m_n = view.load %180[0] : view<1xi64> -> i64
-  %239 = scalar.constant 0 : i64
-  func.return %this, %this_byte_offset, %m_n, %239 : buffer, offset, i64, i64
+  %134 = index.constant 8 : offset
+  %135 = index.add %this_byte_offset, %134 : offset
+  %136 = buffer.view %this[%135] : buffer -> view<1xi64>
+  %m_n = view.load<root_in_bounds> %136[0] : view<1xi64> -> i64
+  %192 = scalar.constant 0 : i64
+  func.return %this, %this_byte_offset, %m_n, %192 : buffer, offset, i64, i64
 }
 
-func.def @Range__iterator__operator_not_equal_value(%this_mi_b: buffer, %this_mi_b_byte_offset: offset, %this_mi_i: i64, %this_mi_s: i64, %rhs_mi_b: buffer, %rhs_mi_b_byte_offset: offset, %rhs_mi_i: i64, %rhs_mi_s: i64) -> (i1) {
-  %193 = scalar.cmpi slt, %this_mi_i, %rhs_mi_i : i64
-  func.return %193 : i1
+func.def @Range__iterator__operator_not_equal_value(%this_mi_i: i64, %rhs_mi_i: i64) -> (i1) {
+  %143 = scalar.cmpi slt, %this_mi_i, %rhs_mi_i : i64
+  func.return %143 : i1
 }
 
-func.def @Range__iterator__operator_dereference_value(%this_mi_b: buffer, %this_mi_b_byte_offset: offset, %this_mi_i: i64, %this_mi_s: i64) -> (i32) {
-  %199 = func.call readonly @at(%this_mi_b, %this_mi_b_byte_offset, %this_mi_i) : (buffer, offset, i64) -> (i32)
-  func.return %199 : i32
+func.def @Range__iterator__operator_dereference_value(%this_mi_b: buffer, %this_mi_b_byte_offset: offset, %this_mi_i: i64) -> (i32) {
+  %148 = func.call readonly @at(%this_mi_b, %this_mi_b_byte_offset, %this_mi_i) : (buffer, offset, i64) -> (i32)
+  func.return %148 : i32
 }
 
-func.def @Range__iterator__operator_pre_increment_value(%this_mi_b: buffer, %this_mi_b_byte_offset: offset, %this_mi_i: i64, %this_mi_s: i64) -> (i64) {
+func.def @Range__iterator__operator_pre_increment_value(%this_mi_i: i64, %this_mi_s: i64) -> (i64) {
   %mi_i = scalar.addi %this_mi_i, %this_mi_s : i64
   func.return %mi_i : i64
 }
 
+func.def inline @Range__Range_storage(%this: buffer, %this_byte_offset: offset, %b_lo: i32, %b_hi: i32) {
+  %161 = buffer.view %this[%this_byte_offset] : buffer -> view<1xi32>
+  view.store<root_in_bounds> %b_lo, %161[0] : i32, view<1xi32>
+  %162 = index.constant 4 : offset
+  %163 = index.add %this_byte_offset, %162 : offset
+  %164 = buffer.view %this[%163] : buffer -> view<1xi32>
+  view.store<root_in_bounds> %b_hi, %164[0] : i32, view<1xi32>
+  %165 = index.constant 8 : offset
+  %166 = index.add %this_byte_offset, %165 : offset
+  %167 = scalar.subi %b_hi, %b_lo : i32
+  %168 = scalar.extsi %167 : i32 to i64
+  %169 = buffer.view %this[%166] : buffer -> view<1xi64>
+  view.store<root_in_bounds> %168, %169[0] : i64, view<1xi64>
+  func.return
+}
+
 func.def @at(%b: buffer, %b_byte_offset: offset, %i: i64) -> (i32) {
-  %212 = buffer.length %b
-  %213 = index.constant 4 : offset
-  %214 = index.sub %212, %213 : offset
-  %215 = index.assume %b_byte_offset [range(%b_byte_offset, 0, %214)] : offset
-  %216 = buffer.view %b[%215] : buffer -> view<1xi32>
-  %b_lo = view.load %216[0] : view<1xi32> -> i32
-  %226 = scalar.trunci %i : i64 to i32
-  %227 = scalar.addi %b_lo, %226 : i32
-  func.return %227 : i32
+  %176 = buffer.view %b[%b_byte_offset] : buffer -> view<1xi32>
+  %b_lo = view.load<root_in_bounds> %176[0] : view<1xi32> -> i32
+  %182 = scalar.trunci %i : i64 to i32
+  %183 = scalar.addi %b_lo, %182 : i32
+  func.return %183 : i32
 }

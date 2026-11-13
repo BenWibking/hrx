@@ -596,14 +596,14 @@ float pointer_value(float* data) {
 
 // ----
 func.def public @pointer_value(%data: buffer, %data_byte_offset: offset) -> (f32) {
-  %22 = scalar.constant 4 : i64
-  %10 = index.cast %data_byte_offset : offset to i64
-  %11 = scalar.addi %10, %22 : i64
-  %12 = scalar.assume %11 [range(%11, 0, 9223372036854775807)] : i64
-  %13 = index.cast %12 : i64 to offset
-  %14 = buffer.view %data[%13] : buffer -> view<1xf32>
-  %15 = view.load<root_in_bounds> %14[0] : view<1xf32> -> f32
-  func.return %15 : f32
+  %13 = scalar.constant 4 : i64
+  %7 = index.cast %data_byte_offset : offset to i64
+  %8 = scalar.addi %7, %13 : i64
+  %9 = scalar.assume %8 [range(%8, 0, 9223372036854775807)] : i64
+  %10 = index.cast %9 : i64 to offset
+  %11 = buffer.view %data[%10] : buffer -> view<1xf32>
+  %12 = view.load<root_in_bounds> %11[0] : view<1xf32> -> f32
+  func.return %12 : f32
 }
 
 // ====
