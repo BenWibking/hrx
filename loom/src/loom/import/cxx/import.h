@@ -61,7 +61,8 @@ void loom_cxx_unit_set_diagnostic_sink(loom_cxx_unit_t* unit,
 
 // Imports an already parsed translation unit, as loom_cxx_import() does after
 // parsing. Translation options apply: roots, kernel_ref roots, floating-point
-// model, Low assembly environment, source observer and the HOSTED flag.
+// model, Low assembly environment, source observer and the HOSTED and
+// DROP_FAILED_KERNELS flags.
 // The source configuration was fixed by loom_cxx_unit_parse(); options->
 // diagnostic_sink becomes the unit's sink. The unit can be imported again,
 // for example with fewer kernel_ref roots; translation may instantiate further

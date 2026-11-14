@@ -6,7 +6,14 @@
 
 #include "loom/import/cxx/import.h"
 
+#include <cxx/symbols.h>
+#include <cxx/types.h>
+
+#include <cstdlib>
 #include <memory>
+#include <string>
+#include <unordered_set>
+#include <vector>
 #include <new>
 #include <stdexcept>
 #include <string_view>
@@ -90,14 +97,62 @@ iree_status_t import_parsed(loom_cxx_unit_t* unit, iree_string_view_t filename,
                             loom_module_t** out_module) {
   using namespace loom::cxx_import;
   Source& parsed = *unit->source;
+  unit->statistics.dropped_kernel_count = 0;
   unit->kernel_launches.clear();
-  loom_module_t* raw_module = nullptr;
-  check(loom_module_allocate(context, filename, block_pool, nullptr,
-                             host_allocator, &raw_module));
+  // A kernel root whose lowering is rejected is dropped and the unit
+  // retranslated without it, so one unsupported kernel does not discard
+  // every other kernel's device code.
+  const bool drop_failed =
+      options->flags & LOOM_CXX_IMPORT_FLAG_DROP_FAILED_KERNELS;
+  std::unordered_set<cxx::FunctionSymbol*> excluded;
   std::unique_ptr<loom_module_t, decltype(&loom_module_free)> module(
-      raw_module, loom_module_free);
-  translate(parsed.unit(), parsed.diagnostics(), module.get(), *options,
-            &unit->kernel_launches);
+      nullptr, loom_module_free);
+  for (;;) {
+    loom_module_t* raw_module = nullptr;
+    check(loom_module_allocate(context, filename, block_pool, nullptr,
+                               host_allocator, &raw_module));
+    module.reset(raw_module);
+    // Source IDs are module-local; buffer observations so an abandoned
+    // attempt's IDs never reach the caller.
+    struct Observed {
+      loom_source_id_t id;
+      std::string filename;
+      iree_string_view_t source;
+    };
+    std::vector<Observed> observed;
+    loom_cxx_import_options_t attempt = *options;
+    if (drop_failed && options->source_observer.fn) {
+      attempt.source_observer = {
+          [](void* user_data, loom_source_id_t id, iree_string_view_t filename,
+             iree_string_view_t source) -> iree_status_t {
+            static_cast<std::vector<Observed>*>(user_data)->push_back(
+                {id, std::string(filename.data, filename.size), source});
+            return iree_ok_status();
+          },
+          &observed};
+    }
+    try {
+      translate(parsed.unit(), parsed.diagnostics(), module.get(), attempt,
+                drop_failed ? &excluded : nullptr, &unit->kernel_launches);
+      if (drop_failed && options->source_observer.fn) {
+        for (const auto& entry : observed) {
+          check(options->source_observer.fn(
+              options->source_observer.user_data, entry.id,
+              iree_make_string_view(entry.filename.data(),
+                                    entry.filename.size()),
+              entry.source));
+        }
+      }
+      break;
+    } catch (const KernelRejected& rejected) {
+      auto* kernel = static_cast<cxx::FunctionSymbol*>(rejected.kernel);
+      if (!excluded.insert(kernel).second || excluded.size() > 1000) {
+        throw SourceRejected();
+      }
+      // The kernel's own diagnostic, a warning through the sink, reports it.
+      ++unit->statistics.dropped_kernel_count;
+    }
+  }
   check(loom_callable_effect_inference_run(module.get()));
   loom_verify_options_t verification_options = {
       .sink = options->diagnostic_sink,
