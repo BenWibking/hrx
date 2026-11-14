@@ -50,7 +50,7 @@ clang++ -std=c++20 -O2 -I libhrx/include loom/docs/examples/cns/cns_loom.cpp \
 ## Run
 
 ```shell
-cns_loom cns.hsaco [--n=64] [--bs=32] [--steps=20] [--streams=1] [--host-sync]
+cns_loom cns.hsaco [--n=64] [--bs=32] [--steps=20] [--streams=1] [--host-sync] [--graph]
 ```
 
 - `--n`: cells per side of the cubic domain [0, 1]³.
@@ -63,6 +63,12 @@ cns_loom cns.hsaco [--n=64] [--bs=32] [--steps=20] [--streams=1] [--host-sync]
   phases are ordered with device-side event waits
   (`hrx_event_record` / `hrx_stream_wait_event`), and the host waits only to
   read the time step and the totals.
+- `--graph`: record each RK2 step once as an HRX graph and replay it every
+  step. The graph is one recorded command buffer with explicit dependencies:
+  each box's kernels in order, with joins at the phase boundaries. The time
+  step and the totals are still computed with stream launches. The RK
+  kernels read the time step from device memory, so a recorded step can be
+  replayed with a new time step.
 
 A phase is one group of launches over all boxes that must finish before the
 next group starts: the ghost-cell fill, the per-box flux chains, an RK
@@ -85,17 +91,27 @@ For HIP, "default" means its default streams.
 |---|---|---|
 | AMReX CNS on HIP, default streams | 0.248 s | 0.200 s |
 | AMReX CNS on HIP, 1 stream | 0.310 s | 0.210 s |
-| This example, 4 streams | 0.249 s | 0.158 s |
+| This example, 4 streams | 0.239 s | 0.159 s |
 | This example, 4 streams, `--host-sync` | 0.531 s | 0.212 s |
-| This example, 1 stream | 0.458 s | 0.184 s |
-| This example, 4 streams, agent-scope acquires¹ | 0.203 s | 0.151 s |
-| This example, 1 stream, agent-scope acquires¹ | 0.344 s | 0.168 s |
+| This example, 1 stream | 0.466 s | 0.184 s |
+| This example, `--graph` | 0.347 s | 0.169 s |
+| This example, 4 streams, agent-scope acquires¹ | 0.196 s | 0.151 s |
+| This example, 1 stream, agent-scope acquires¹ | 0.341 s | 0.168 s |
+| This example, `--graph`, agent-scope acquires¹ | 0.345 s | 0.166 s |
 
 ¹ A local libhrx change that lowers the system-scope acquire fences in AQL
 packet headers to agent scope. Totals are unchanged.
 
+Between two operations, a stream records an ordering barrier with memory
+scopes, which the AMD GPU driver turns into system-scope fences. A graph
+records agent-scope barriers between dependent nodes, so on upstream libhrx
+`--graph` runs as fast as one stream with agent-scope acquires, and lowering
+acquires further changes it by less than 1%. The graph does not run
+independent boxes concurrently, so four streams on four queues remain the
+fastest mode.
+
 The 64³ totals pass the reference check in every configuration (relative error
-8e-15 for mass, 5e-15 for energy).
+8e-15 for mass, 5e-15 for energy), with identical totals in every mode.
 
 ## Notes
 
