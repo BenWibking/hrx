@@ -11,6 +11,7 @@
 #include <cxx/toolchain.h>
 #include <cxx/translation_unit.h>
 
+#include <cstdint>
 #include <string>
 #include <string_view>
 
@@ -33,6 +34,9 @@ class Diagnostics final : public cxx::DiagnosticsClient {
  public:
   explicit Diagnostics(loom_diagnostic_sink_t sink) : sink_(sink) {}
   ~Diagnostics() override { iree_status_free(status_); }
+  // Replaces the sink receiving later diagnostics, such as those of a parsed
+  // translation unit's import or of a host code generator sharing the unit.
+  void set_sink(loom_diagnostic_sink_t sink) { sink_ = sink; }
   void bind(cxx::TranslationUnit* unit, SourceContents* contents) {
     unit_ = unit;
     contents_ = contents;
@@ -88,6 +92,9 @@ class Frontend {
   void resume();
 
   cxx::TranslationUnit& unit() { return unit_; }
+  // Source profile that configured the unit: target triple, memory layout,
+  // language and exception support.
+  const cxx::Toolchain& toolchain() const { return *toolchain_; }
   Diagnostics& diagnostics() { return diagnostics_; }
   SourceContents& contents() { return contents_; }
 
@@ -101,6 +108,16 @@ class Frontend {
   // Destroyed before its borrowed layout, diagnostics and source contents.
   cxx::TranslationUnit unit_;
 };
+
+// Process-wide counts of frontend phases, for tools that show how often a
+// translation unit was preprocessed and parsed.
+struct FrontendStatistics {
+  // Primary sources preprocessed, including preamble-only runs.
+  uint64_t preprocess_count = 0;
+  // Cold parses plus parses resumed after a restored preamble.
+  uint64_t parse_count = 0;
+};
+FrontendStatistics frontend_statistics();
 
 }  // namespace loom::cxx_import
 
