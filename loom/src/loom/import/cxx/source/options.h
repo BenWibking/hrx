@@ -133,6 +133,12 @@ typedef struct loom_cxx_import_options_t {
   // Optional immutable frontend preamble borrowed for the import duration.
   // Source or frontend-configuration mismatches use ordinary cold parsing.
   const loom_cxx_preamble_t* preamble;
+  // Linkage names of loom::kernel::kernel_ref<&K> specializations, as host
+  // code generation emits them. When nonempty, the import exports exactly
+  // their kernels K (and no |roots|) and reports their launch facts.
+  const iree_string_view_t* kernel_refs;
+  // Number of kernel_ref roots.
+  iree_host_size_t kernel_ref_count;
 } loom_cxx_import_options_t;
 
 // Parses the canonical precise or fast floating-point model spelling.
