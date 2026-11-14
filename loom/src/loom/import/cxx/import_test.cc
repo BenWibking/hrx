@@ -967,6 +967,70 @@ const loom::kernel::descriptor* host_bad() { return describe<Bad>(); }
   EXPECT_TRUE(Launch(kBodyReference)->available);
 }
 
+// One kernel needs its View temporary in storage, which a pointer-holding
+// record cannot have, so that kernel is dropped. The demand stays at its call
+// site: Table::operator[] keeps returning a value, and the kernel that only
+// reads through it still imports. Able is translated first.
+TEST_F(KernelRefImportTest, UnstorableResultDemandStaysWithItsCaller) {
+  std::string source = std::string(kKernelRefSource) + R"cxx(
+struct Extent {
+  int v[3];
+  const int* data() const { return v; }
+};
+template <class T>
+struct View {
+  T* p;
+  Extent begin;
+  View(T* a, Extent b) : p(a), begin(b) {}
+};
+struct Corner {
+  int v[3];
+  explicit Corner(const int* a) : v{a[0], a[1], a[2]} {}
+};
+inline Corner corner(const Extent& extent) { return Corner(extent.data()); }
+struct Bounds {
+  Corner lo;
+  explicit Bounds(View<const float> const& view) : lo(corner(view.begin)) {}
+};
+struct Table {
+  const float* base;
+  View<const float> operator[](int index) const {
+    return View<const float>(base + index, Extent{{0, 0, 0}});
+  }
+};
+struct Able {
+  Table table;
+  float* y;
+  [[loom::inline]] void operator()() const { y[0] = table[0].p[0]; }
+};
+struct Broken {
+  Table table;
+  float* y;
+  [[loom::inline]] void operator()() const {
+    Bounds bounds(table[0]);
+    y[0] = static_cast<float>(bounds.lo.v[0]);
+  }
+};
+const loom::kernel::descriptor* host_able() { return describe<Able>(); }
+const loom::kernel::descriptor* host_broken() { return describe<Broken>(); }
+)cxx";
+  const std::string able =
+      "_ZN4loom6kernel10kernel_refIXadL_Z3runI4AbleEvT_EEEE";
+  const std::string broken =
+      "_ZN4loom6kernel10kernel_refIXadL_Z3runI6BrokenEvT_EEEE";
+  UseKernelRefs({able, broken});
+  options_.flags |= LOOM_CXX_IMPORT_FLAG_DROP_FAILED_KERNELS;
+  IREE_ASSERT_OK(
+      ImportUnit(iree_make_string_view(source.data(), source.size())));
+  ASSERT_NE(module_, nullptr);
+  EXPECT_EQ(error_count_, 0);
+  ASSERT_NE(Launch(able), nullptr);
+  EXPECT_TRUE(Launch(able)->available);
+  ASSERT_NE(Launch(broken), nullptr);
+  EXPECT_FALSE(Launch(broken)->available);
+  EXPECT_EQ(loom::cxx_import::unit_statistics(unit_).dropped_kernel_count, 1u);
+}
+
 // Hosted code branches on loom::target::is_device(); the device pass imports
 // only the device arm, so host-only calls never reach device code.
 TEST_F(KernelRefImportTest, HostedImportKeepsOnlyTheDeviceArmOfDeviceQueries) {

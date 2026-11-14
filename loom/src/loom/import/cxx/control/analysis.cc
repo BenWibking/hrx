@@ -4263,9 +4263,18 @@ CallPropagation ControlFlow::propagate_call(
        callee.result_requires_storage())) {
     caller_changed =
         object_identity_->require_storage(call.source) || caller_changed;
-    callee_changed =
-        callee.object_identity_->require_storage(callee.function_) ||
-        callee_changed;
+    // A result that holds handles has no byte-storage representation, so the
+    // callee cannot construct it in caller-owned storage. Keep one caller's
+    // demand at its call site: sent to the callee, it would reach every other
+    // caller of the function and reject them all.
+    const auto* signature =
+        static_cast<const cxx::FunctionType*>(callee.function_->type());
+    if (callee.result_requires_storage() ||
+        !types_.requires_value_transport(signature->returnType())) {
+      callee_changed =
+          callee.object_identity_->require_storage(callee.function_) ||
+          callee_changed;
+    }
   }
   auto parameters = callee.function_->parameters();
   const bool storage_receiver_result =
