@@ -15,7 +15,6 @@
 #include "common/graph_memory.h"
 #include "common/hrx_bridge.h"
 #include "common/mem_pool.h"
-#include "iree/hal/utils/profile_file.h"
 #include "iree/io/file_handle.h"
 #include "libhrx/src/libhrx/device.h"
 #include "libhrx/src/libhrx/device_group.h"
@@ -474,11 +473,6 @@ static const char* iree_hal_streaming_gpu_driver_name(void) {
   return (value && value[0]) ? value : "amdgpu";
 }
 
-static const char* iree_hal_streaming_profile_file_path(void) {
-  const char* value = getenv("HRX_PROFILE_FILE");
-  return (value && value[0]) ? value : NULL;
-}
-
 static iree_status_t iree_hal_streaming_runtime_features(
     iree_hal_device_runtime_feature_flags_t* out_runtime_features) {
   *out_runtime_features = IREE_HAL_DEVICE_RUNTIME_FEATURE_FLAG_NONE;
@@ -502,53 +496,6 @@ static iree_status_t iree_hal_streaming_runtime_features(
                             "unsupported HRX_HAL_SANITIZER '%s'", sanitizer);
   }
   *out_runtime_features = runtime_features;
-  return iree_ok_status();
-}
-
-static iree_status_t iree_hal_streaming_profile_file_sink_create(
-    const char* file_path, iree_allocator_t host_allocator,
-    iree_hal_profile_sink_t** out_sink) {
-  *out_sink = NULL;
-  if (!file_path || !file_path[0]) {
-    return iree_ok_status();
-  }
-
-  iree_io_file_handle_t* file_handle = NULL;
-  iree_status_t status = iree_io_file_handle_create(
-      IREE_IO_FILE_MODE_WRITE | IREE_IO_FILE_MODE_SEQUENTIAL_SCAN |
-          IREE_IO_FILE_MODE_SHARE_READ,
-      iree_make_cstring_view(file_path), /*initial_size=*/0, host_allocator,
-      &file_handle);
-  if (iree_status_is_ok(status)) {
-    status = iree_hal_profile_file_sink_create(file_handle, host_allocator,
-                                               out_sink);
-  }
-  iree_io_file_handle_release(file_handle);
-  return status;
-}
-
-static iree_status_t iree_hal_streaming_profile_data_families(
-    iree_hal_device_profiling_data_families_t* out_data_families) {
-  const char* value = getenv("HRX_PROFILE_MODE");
-  if (!value || !value[0] || strcmp(value, "queue") == 0) {
-    *out_data_families = IREE_HAL_DEVICE_PROFILING_DATA_QUEUE_EVENTS;
-  } else if (strcmp(value, "dispatch") == 0) {
-    *out_data_families = IREE_HAL_DEVICE_PROFILING_DATA_EXECUTABLE_METADATA |
-                         IREE_HAL_DEVICE_PROFILING_DATA_DISPATCH_EVENTS;
-  } else if (strcmp(value, "executable") == 0) {
-    *out_data_families = IREE_HAL_DEVICE_PROFILING_DATA_EXECUTABLE_METADATA |
-                         IREE_HAL_DEVICE_PROFILING_DATA_EXECUTABLE_TRACES;
-  } else if (strcmp(value, "all") == 0) {
-    *out_data_families = IREE_HAL_DEVICE_PROFILING_DATA_QUEUE_EVENTS |
-                         IREE_HAL_DEVICE_PROFILING_DATA_EXECUTABLE_METADATA |
-                         IREE_HAL_DEVICE_PROFILING_DATA_DEVICE_QUEUE_EVENTS |
-                         IREE_HAL_DEVICE_PROFILING_DATA_DISPATCH_EVENTS |
-                         IREE_HAL_DEVICE_PROFILING_DATA_EXECUTABLE_TRACES;
-  } else {
-    return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
-                            "unsupported HRX_PROFILE_MODE '%s'", value);
-  }
-
   return iree_ok_status();
 }
 
@@ -623,23 +570,9 @@ static iree_status_t iree_hal_streaming_device_group_create(
   iree_allocator_free(allocator, infos);
   iree_hal_driver_release(driver);
 
-  iree_hal_profile_sink_t* profile_sink = NULL;
   if (iree_status_is_ok(status)) {
-    status = iree_hal_streaming_profile_file_sink_create(
-        iree_hal_streaming_profile_file_path(), allocator, &profile_sink);
+    status = hrx_device_group_profile_from_environment(group);
   }
-  iree_hal_device_profiling_options_t profile_options = {.sink = profile_sink};
-  if (iree_status_is_ok(status) && profile_sink) {
-    status = iree_hal_streaming_profile_data_families(
-        &profile_options.data_families);
-  }
-  for (size_t i = 0; profile_sink && i < hrx_device_group_device_count(group) &&
-                     iree_status_is_ok(status);
-       ++i) {
-    status = hrx_device_profile_begin(hrx_device_group_get_device(group, i),
-                                      &profile_options);
-  }
-  iree_hal_profile_sink_release(profile_sink);
   if (!iree_status_is_ok(status)) {
     hrx_device_group_release(group);
   } else {

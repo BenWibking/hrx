@@ -36,6 +36,14 @@ iree_status_t hrx_device_group_create_with_extensions(
     iree_hal_device_runtime_feature_flags_t runtime_features,
     hrx_device_group_t* out_group);
 
+// Begins device profiling on every device of |group| when HRX_PROFILE_FILE
+// names a capture file, with the data families HRX_PROFILE_MODE selects
+// (queue, dispatch, executable or all; queue by default). Completed records
+// drain into the file on stream and event synchronization and when profiling
+// ends at final group release. Does nothing when HRX_PROFILE_FILE is unset.
+iree_status_t hrx_device_group_profile_from_environment(
+    hrx_device_group_t group);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif
