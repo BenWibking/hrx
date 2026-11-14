@@ -136,6 +136,12 @@ typedef struct loom_cxx_import_options_t {
   // Logical output module identity. Empty uses the physical source filename.
   // This does not change include lookup or diagnostic source identity.
   iree_string_view_t module_name;
+  // Linkage names of loom::kernel::kernel_ref<&K> specializations, as host
+  // code generation emits them. When nonempty, the import exports exactly
+  // their kernels K (and no |roots|) and reports their launch facts.
+  const iree_string_view_t* kernel_refs;
+  // Number of kernel_ref roots.
+  iree_host_size_t kernel_ref_count;
 } loom_cxx_import_options_t;
 
 // Parses the canonical precise or fast floating-point model spelling.
