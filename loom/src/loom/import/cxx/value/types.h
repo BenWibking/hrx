@@ -389,6 +389,17 @@ enum class KernelComponent : uint8_t {
   PointerOffset,
 };
 
+// One flattened component of a kernel parameter with the source subobject that
+// owns it. A pointer's root and offset components share one leaf subobject.
+struct KernelLeaf {
+  // Kernel transport of this component.
+  KernelComponent component;
+  // Source type of the owning leaf subobject (a scalar, vector, or pointer).
+  const cxx::Type* type;
+  // Byte offset of the owning leaf subobject within the host parameter object.
+  uint64_t byte_offset;
+};
+
 // Projects resolved C++ types using the translation unit's explicit data model.
 // Source signedness remains available even when both types share one IR
 // carrier. Enums use their resolved underlying integer representation; nominal
@@ -524,6 +535,11 @@ class Types {
   // append_kernel_parameter() does.
   std::vector<KernelComponent> kernel_components(const cxx::Type* input,
                                                  cxx::AST* owner);
+  // Returns every flattened component of a kernel parameter with its owning
+  // leaf subobject's source type and host byte offset, in partition order. The
+  // host packs record kernel arguments from these offsets.
+  std::vector<KernelLeaf> kernel_leaves(const cxx::Type* input,
+                                        cxx::AST* owner);
   // Appends a High signature bound to this destination's flattened component
   // IDs. Static leaves ignore their IDs; dependent shaped values and handles
   // reference their own dynamic extents and encoding. |identities| is either

@@ -55,6 +55,9 @@ struct loom_cxx_unit_t {
   std::unique_ptr<loom::cxx_import::Source> source;
   // Usage counts reported by loom::cxx_import::unit_statistics().
   loom::cxx_import::UnitStatistics statistics;
+  // Host launch facts of the most recent import, reported by
+  // loom::cxx_import::unit_kernel_launches().
+  std::vector<loom::cxx_import::KernelLaunch> kernel_launches;
 };
 
 namespace {
@@ -87,12 +90,14 @@ iree_status_t import_parsed(loom_cxx_unit_t* unit, iree_string_view_t filename,
                             loom_module_t** out_module) {
   using namespace loom::cxx_import;
   Source& parsed = *unit->source;
+  unit->kernel_launches.clear();
   loom_module_t* raw_module = nullptr;
   check(loom_module_allocate(context, filename, block_pool, nullptr,
                              host_allocator, &raw_module));
   std::unique_ptr<loom_module_t, decltype(&loom_module_free)> module(
       raw_module, loom_module_free);
-  translate(parsed.unit(), parsed.diagnostics(), module.get(), *options);
+  translate(parsed.unit(), parsed.diagnostics(), module.get(), *options,
+            &unit->kernel_launches);
   check(loom_callable_effect_inference_run(module.get()));
   loom_verify_options_t verification_options = {
       .sink = options->diagnostic_sink,
@@ -207,6 +212,11 @@ bool unit_has_error(const loom_cxx_unit_t* unit) {
 
 UnitStatistics unit_statistics(const loom_cxx_unit_t* unit) {
   return unit->statistics;
+}
+
+const std::vector<KernelLaunch>& unit_kernel_launches(
+    const loom_cxx_unit_t* unit) {
+  return unit->kernel_launches;
 }
 
 }  // namespace loom::cxx_import
