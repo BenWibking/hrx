@@ -40,7 +40,7 @@ typedef struct loom_cxx_unit_t loom_cxx_unit_t;
 
 // Preprocesses and checks one translation unit with the source configuration
 // in |options|: standard, triple, data model, include paths, defines, source
-// provider, preamble and the NO_BUILTIN_INCLUDES flag. Diagnostics
+// provider, preamble and the HOSTED and NO_BUILTIN_INCLUDES flags. Diagnostics
 // go to options->diagnostic_sink. On success the caller owns *out_unit and
 // frees it with loom_cxx_unit_free(). Source rejection emits diagnostics and
 // returns OK with *out_unit=NULL. Borrowed option storage and the source
@@ -61,7 +61,7 @@ void loom_cxx_unit_set_diagnostic_sink(loom_cxx_unit_t* unit,
 
 // Imports an already parsed translation unit, as loom_cxx_import() does after
 // parsing. Translation options apply: roots, floating-point model, Low
-// assembly environment and source observer.
+// assembly environment, source observer and the HOSTED flag.
 // The source configuration was fixed by loom_cxx_unit_parse(); options->
 // diagnostic_sink becomes the unit's sink. The unit can be imported again;
 // translation may instantiate further templates in it but does not reparse
