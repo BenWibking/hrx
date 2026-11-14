@@ -10,13 +10,17 @@
 // streams.
 //
 // Usage: cns_loom <cns.hsaco> [--n=64] [--bs=32] [--steps=20] [--streams=1]
-//                 [--host-sync]
+//                 [--host-sync] [--graph]
 //
 // Phases of the step are ordered across streams with device-side event waits;
 // the host waits only to read the time step and the totals. --host-sync
 // instead synchronizes every stream from the host after each phase. The time
 // reported per step covers the advance, the totals and the next time step, as
 // AMReX's "Coarse TimeStep time" does.
+//
+// --graph records each RK2 step once as an HRX graph (one recorded command
+// buffer with explicit dependencies between launches) and replays it every
+// step. The time step and the totals are still computed with stream launches.
 //
 // With the defaults (AMReX's inputs-ci: 64^3 cells in 32^3 boxes) the totals
 // after step 20 are compared with the CPU reference of AMReX's CNS test.
@@ -120,6 +124,7 @@ struct Options {
   int steps = 20;
   int streams = 1;
   bool host_sync = false;
+  bool graph = false;
 };
 
 class Cns {
@@ -137,9 +142,12 @@ class Cns {
     open_device();
     load_kernels();
     allocate();
+    if (options_.graph) build_graphs();
   }
 
   ~Cns() {
+    for (hrx_graph_exec_t exec : execs_) hrx_graph_exec_release(exec);
+    for (hrx_graph_t graph : graphs_) hrx_graph_release(graph);
     for (hrx_event_t event : events_) hrx_event_release(event);
     for (hrx_buffer_t buffer : buffers_) hrx_buffer_release(buffer);
     for (hrx_stream_t stream : streams_) hrx_stream_release(stream);
@@ -245,8 +253,9 @@ class Cns {
     }
     std::printf("device %s, %d stream(s) on %u provisioned queue(s), %s\n",
                 uri.c_str(), options_.streams, provisioned,
-                options_.host_sync ? "host synchronization between phases"
-                                   : "device-side ordering between phases");
+                options_.graph       ? "one graph per time step"
+                : options_.host_sync ? "host synchronization between phases"
+                                     : "device-side ordering between phases");
   }
 
   void load_kernels() {
@@ -290,8 +299,10 @@ class Cns {
     dsdt_ = allocate_buffer(dsdt_box_ * boxes_);
     for (int d = 0; d < 3; ++d) flux_[d] = allocate_buffer(flux_box_ * boxes_);
     // Primitive and slope temporaries, one set per stream (AMReX resizes one
-    // FArrayBox per MFIter iteration; boxes on one stream run in order).
-    for (int s = 0; s < options_.streams; ++s) {
+    // FArrayBox per MFIter iteration; boxes on one stream run in order). A
+    // graph may run boxes concurrently, so it gets one set per box.
+    const int temporaries = options_.graph ? boxes_ : options_.streams;
+    for (int s = 0; s < temporaries; ++s) {
       prim_.push_back(allocate_buffer(prim_box_));
       slope_tmp_.push_back(allocate_buffer(slope_box_));
     }
@@ -300,6 +311,10 @@ class Cns {
     partial_ = allocate_buffer(groups);
     partial_host_.resize(groups);
     sums_partial_ = allocate_buffer(5 * groups);
+    time_step_ = allocate_buffer(1);
+    // The initial data goes to new_; the first step swaps it into old_.
+    state_a_ = new_;
+    state_b_ = old_;
     sums_host_.resize(5 * groups);
   }
 
@@ -438,11 +453,11 @@ class Cns {
     phase_barrier();
   }
 
-  void rk_update(const Kernel& kernel, double dt) {
+  void rk_update(const Kernel& kernel) {
     const uint32_t elements = boxes_ * bs_ * bs_ * bs_ * kNcons;
     dispatch(streams_[0], kernel, elements,
-             Constants() << elements << bs_ << dt,
-             {whole_ref(old_, state_box_ * boxes_),
+             Constants() << elements << bs_,
+             {whole_ref(time_step_, 1), whole_ref(old_, state_box_ * boxes_),
               whole_ref(dsdt_, dsdt_box_ * boxes_),
               whole_ref(new_, state_box_ * boxes_)});
     phase_barrier();
@@ -451,14 +466,150 @@ class Cns {
   // CNS::advance with RungeKutta::RK2.
   void advance(double dt) {
     std::swap(old_, new_);  // StateData::swapTimeLevels
+    check(hrx_stream_update_buffer(streams_[0], &dt, sizeof(dt), time_step_, 0),
+          "hrx_stream_update_buffer");
+    if (options_.graph) {
+      check(hrx_graph_exec_launch(execs_[old_ == state_a_ ? 0 : 1],
+                                  streams_[0]),
+            "hrx_graph_exec_launch");
+      return;
+    }
     fill_ghosts(old_);
     compute_dsdt(old_);
-    rk_update(rk1_, dt);
+    rk_update(rk1_);
     compute_temp(new_);
     fill_ghosts(new_);
     compute_dsdt(new_);
-    rk_update(rk2_, dt);
+    rk_update(rk2_);
     compute_temp(new_);
+  }
+
+  //===--------------------------------------------------------------------===//
+  // Graph mode
+  //===--------------------------------------------------------------------===//
+
+  hrx_graph_node_t add_node(hrx_graph_t graph, const Kernel& kernel,
+                            uint32_t elements, const Constants& constants,
+                            std::initializer_list<hrx_buffer_ref_t> bindings,
+                            const std::vector<hrx_graph_node_t>& deps) {
+    if (constants.size() != kernel.constant_bytes ||
+        bindings.size() != kernel.bindings) {
+      std::fprintf(stderr, "cns_loom: %s argument mismatch\n", kernel.name);
+      std::exit(1);
+    }
+    hrx_graph_kernel_node_attrs_t attrs{};
+    attrs.executable = executable_;
+    attrs.export_ordinal = kernel.ordinal;
+    attrs.config = {{(elements + 255) / 256, 1, 1}, {256, 1, 1}, 0};
+    attrs.constants = constants.data();
+    attrs.constants_size = constants.size();
+    attrs.bindings = bindings.begin();
+    attrs.binding_count = bindings.size();
+    attrs.flags = HRX_DISPATCH_FLAG_NONE;
+    hrx_graph_node_t node = nullptr;
+    check(hrx_graph_add_kernel_node(graph, deps.data(), deps.size(), &attrs,
+                                    &node),
+          kernel.name);
+    return node;
+  }
+
+  hrx_graph_node_t add_join(hrx_graph_t graph,
+                            const std::vector<hrx_graph_node_t>& deps) {
+    hrx_graph_node_t node = nullptr;
+    check(hrx_graph_add_empty_node(graph, deps.data(), deps.size(), &node),
+          "hrx_graph_add_empty_node");
+    return node;
+  }
+
+  // Ghost fill, then each box's compute_dSdt chain after its own fill. A box's
+  // fill writes only its own ghost cells, so chains need not wait for others.
+  std::vector<hrx_graph_node_t> add_stage(hrx_graph_t graph,
+                                          hrx_buffer_t state,
+                                          hrx_graph_node_t after) {
+    const std::vector<hrx_graph_node_t> start =
+        after ? std::vector<hrx_graph_node_t>{after}
+              : std::vector<hrx_graph_node_t>{};
+    const uint32_t grown2 = (bs_ + 4) * (bs_ + 4) * (bs_ + 4);
+    const uint32_t slope_cells = (bs_ + 2) * bs_ * bs_;
+    const uint32_t faces = (bs_ + 1) * bs_ * bs_;
+    const uint32_t updates = bs_ * bs_ * bs_ * kNcons;
+    const double dxinv = 1.0 / dx_;
+    std::vector<hrx_graph_node_t> done;
+    for (int b = 0; b < boxes_; ++b) {
+      hrx_graph_node_t node =
+          add_node(graph, fill_, grown2,
+                   Constants() << grown2 << bs_ << boxes_per_side_ << b,
+                   {whole_ref(state, state_box_ * boxes_)}, start);
+      const hrx_buffer_ref_t q = whole_ref(prim_[b], prim_box_);
+      const hrx_buffer_ref_t dq = whole_ref(slope_tmp_[b], slope_box_);
+      node = add_node(graph, ctoprim_, grown2,
+                      Constants() << grown2 << bs_ << kGamma << kSmallr
+                                  << kSmallp << kCv,
+                      {box_ref(state, state_box_, b), q}, {node});
+      for (int d = 0; d < 3; ++d) {
+        node = add_node(graph, slope_[d], slope_cells,
+                        Constants() << slope_cells << bs_, {q, dq}, {node});
+        node = add_node(graph, riemann_[d], faces,
+                        Constants() << faces << bs_ << kGamma << kSmallp
+                                    << kSmallr,
+                        {dq, q, box_ref(flux_[d], flux_box_, b)}, {node});
+      }
+      node = add_node(graph, dudt_, updates,
+                      Constants() << updates << bs_ << dxinv << dxinv << dxinv,
+                      {box_ref(flux_[0], flux_box_, b),
+                       box_ref(flux_[1], flux_box_, b),
+                       box_ref(flux_[2], flux_box_, b),
+                       box_ref(dsdt_, dsdt_box_, b)},
+                      {node});
+      done.push_back(node);
+    }
+    return done;
+  }
+
+  // RK update over all boxes, then each box's temperature; returns the join.
+  hrx_graph_node_t add_update(hrx_graph_t graph, const Kernel& kernel,
+                              hrx_buffer_t old_state, hrx_buffer_t new_state,
+                              const std::vector<hrx_graph_node_t>& after) {
+    const uint32_t elements = boxes_ * bs_ * bs_ * bs_ * kNcons;
+    const uint32_t cells = bs_ * bs_ * bs_;
+    hrx_graph_node_t update = add_node(
+        graph, kernel, elements, Constants() << elements << bs_,
+        {whole_ref(time_step_, 1), whole_ref(old_state, state_box_ * boxes_),
+         whole_ref(dsdt_, dsdt_box_ * boxes_),
+         whole_ref(new_state, state_box_ * boxes_)},
+        {add_join(graph, after)});
+    std::vector<hrx_graph_node_t> temps;
+    for (int b = 0; b < boxes_; ++b) {
+      temps.push_back(add_node(graph, temp_, cells,
+                               Constants() << cells << bs_ << kCv,
+                               {box_ref(new_state, state_box_, b)}, {update}));
+    }
+    return add_join(graph, temps);
+  }
+
+  // One RK2 step from old_state to new_state, recorded once and replayed.
+  void build_graph(int index, hrx_buffer_t old_state, hrx_buffer_t new_state) {
+    hrx_graph_t graph = nullptr;
+    check(hrx_graph_create(device_, 0, &graph), "hrx_graph_create");
+    const auto stage1 = add_stage(graph, old_state, nullptr);
+    const hrx_graph_node_t mid =
+        add_update(graph, rk1_, old_state, new_state, stage1);
+    const auto stage2 = add_stage(graph, new_state, mid);
+    add_update(graph, rk2_, old_state, new_state, stage2);
+    check(hrx_graph_instantiate(graph, hrx_stream_get_queue(streams_[0]), 0,
+                                &execs_[index]),
+          "hrx_graph_instantiate");
+    graphs_[index] = graph;
+  }
+
+  void build_graphs() {
+    const auto start = std::chrono::steady_clock::now();
+    build_graph(0, state_a_, state_b_);
+    build_graph(1, state_b_, state_a_);
+    std::printf("graphs recorded and instantiated in %.3f s\n",
+                std::chrono::duration<double>(
+                    std::chrono::steady_clock::now() - start)
+                    .count());
   }
 
   // CNS::estTimeStep: the minimum over cells, times the CFL number.
@@ -555,6 +706,10 @@ class Cns {
   std::vector<double> partial_host_;
   hrx_buffer_t sums_partial_ = nullptr;
   std::vector<double> sums_host_;
+  hrx_buffer_t time_step_ = nullptr;
+  hrx_buffer_t state_a_ = nullptr, state_b_ = nullptr;
+  hrx_graph_t graphs_[2] = {};
+  hrx_graph_exec_t execs_[2] = {};
 };
 
 }  // namespace
@@ -573,6 +728,8 @@ int main(int argc, char** argv) {
       options.streams = std::max(1, std::atoi(arg + 10));
     } else if (std::strcmp(arg, "--host-sync") == 0) {
       options.host_sync = true;
+    } else if (std::strcmp(arg, "--graph") == 0) {
+      options.graph = true;
     } else if (!options.hsaco && arg[0] != '-') {
       options.hsaco = arg;
     } else {
@@ -583,7 +740,7 @@ int main(int argc, char** argv) {
   if (!options.hsaco) {
     std::fprintf(stderr,
                  "usage: cns_loom <cns.hsaco> [--n=64] [--bs=32] [--steps=20] "
-                 "[--streams=1] [--host-sync]\n");
+                 "[--streams=1] [--host-sync] [--graph]\n");
     return 2;
   }
   Cns cns(options);
