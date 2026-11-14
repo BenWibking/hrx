@@ -187,6 +187,12 @@ typedef struct loomc_cxx_import_options_t {
   /// Optional immutable preamble borrowed until import returns. An exact source
   /// prefix or frontend-configuration mismatch uses ordinary cold parsing.
   const loomc_cxx_preamble_t* preamble;
+  /// Linkage names of loom::kernel::kernel_ref<&K> specializations, as host
+  /// code generation emits them. When nonempty, the import exports exactly
+  /// their kernels K, and |roots| must be empty.
+  const loomc_string_view_t* kernel_refs;
+  /// Number of kernel_ref roots.
+  loomc_host_size_t kernel_ref_count;
 } loomc_cxx_import_options_t;
 
 /// Creates an immutable semantic preamble from leading include directives.
@@ -320,14 +326,15 @@ LOOMC_API_EXPORT void loomc_cxx_unit_release(loomc_cxx_unit_t* unit);
 /// @param context Immutable context containing the core dialects.
 /// @param workspace Workspace backing the returned module's arena storage.
 /// @param unit Unit from loomc_cxx_unit_parse. It is not reparsed.
-/// @param options Import policy, or NULL for defaults: roots, floating-point
-/// model, path mapper, and the HOSTED flag. Source configuration
+/// @param options Import policy, or NULL for defaults: roots, kernel_ref roots,
+/// floating-point model, path mapper, and the HOSTED flag. Source configuration
 /// fields were fixed when the unit was parsed and are ignored.
 /// @param allocator Host allocator for public handles and temporary adapters.
 /// @param out_module Receives one owned module on successful translation.
 /// @param out_result Receives one owned result with retained diagnostics.
 /// @return OK for successful import or diagnosed rejection, as
-/// loomc_module_import_cxx. A unit can be imported again.
+/// loomc_module_import_cxx. A unit can be imported again, for example with
+/// fewer kernel_ref roots.
 ///
 /// @ownership
 /// Release outputs with loomc_module_release and loomc_result_release.
