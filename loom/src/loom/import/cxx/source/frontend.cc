@@ -11,6 +11,9 @@
 #include <cxx/preprocessor.h>
 #include <cxx/triple.h>
 
+#include <atomic>
+#include <cstdlib>
+
 #include "loom/error/error_catalog.h"
 #include "loom/import/cxx/source/error.h"
 
@@ -143,6 +146,9 @@ void Diagnostics::reject(cxx::SourceLocation location,
 
 namespace {
 
+std::atomic<uint64_t> preprocess_count{0};
+std::atomic<uint64_t> parse_count{0};
+
 // Supplies language macros and an explicit data model without discovering a
 // host SDK, compiler driver, or machine-specific include directory.
 class SourceToolchain final : public cxx::Toolchain {
@@ -244,6 +250,7 @@ Frontend::Frontend(iree_string_view_t filename,
 }
 
 void Frontend::preprocess(iree_string_view_t source, bool preamble_only) {
+  preprocess_count.fetch_add(1, std::memory_order_relaxed);
   auto* preprocessor = unit_.preprocessor();
   preprocessor->setPreambleOnly(preamble_only);
   unit_.beginPreprocessing(string(source),
@@ -287,12 +294,19 @@ void Frontend::preprocess(iree_string_view_t source, bool preamble_only) {
 
 void Frontend::parse() {
   unit_.parse({.analysisMode = cxx::ParserAnalysisMode::kFull});
+  parse_count.fetch_add(1, std::memory_order_relaxed);
   diagnostics_.finish();
 }
 
 void Frontend::resume() {
   unit_.resume({.analysisMode = cxx::ParserAnalysisMode::kFull});
+  parse_count.fetch_add(1, std::memory_order_relaxed);
   diagnostics_.finish();
+}
+
+FrontendStatistics frontend_statistics() {
+  return {.preprocess_count = preprocess_count.load(std::memory_order_relaxed),
+          .parse_count = parse_count.load(std::memory_order_relaxed)};
 }
 
 }  // namespace loom::cxx_import
