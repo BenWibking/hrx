@@ -143,6 +143,7 @@ class Translator final : private Initialization::Evaluation,
   }
 
   void translate() {
+    functions_.set_import_options(&options_);
     functions_.select({options_.roots, options_.root_count}, types_);
     functions_.analyze(types_);
     for (size_t index = 0; index < functions_.pending().size(); ++index) {
@@ -1982,8 +1983,13 @@ class Translator final : private Initialization::Evaluation,
     }
     if (annotated(variable, "workgroup")) {
       auto spelling = cxx::to_string(variable->name());
+      // Hosted single-source mode also admits required-inline helpers.
+      const bool hosted = functions_.hosted();
       if (current_function_.kind != FunctionKind::Kernel &&
-          current_function_.kind != FunctionKind::TemplateDefinition) {
+          current_function_.kind != FunctionKind::TemplateDefinition &&
+          !(hosted && current_function_.kind == FunctionKind::Ordinary &&
+            loom_func_def_inline_policy(current_function_.operation) ==
+                LOOM_INLINE_POLICY_INLINE)) {
         diagnostics_.reject(variable->location(), LOOM_ERR_LOWERING_075,
                             spelling);
       }
@@ -8326,6 +8332,10 @@ class Translator final : private Initialization::Evaluation,
   }
 
   void effect(cxx::ExpressionAST* ast) override {
+    if (!ast->type) {
+      // Only an expression the frontend could not type has none.
+      fail(ast, "expression has no resolved C++ type");
+    }
     if (control_->object_requires_storage(ast) &&
         ast->valueCategory == cxx::ValueCategory::kPrValue &&
         unit_.typeTraits().is_class(ast->type)) {
