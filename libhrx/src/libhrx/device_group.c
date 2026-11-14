@@ -6,6 +6,8 @@
 #include "hrx_internal.h"
 #include "iree/async/frontier_tracker.h"
 #include "iree/base/internal/path.h"
+#include "iree/hal/utils/profile_file.h"
+#include "iree/io/file_handle.h"
 #include "runtime.h"
 
 static_assert((uint32_t)HRX_WAIT_FLAG_YIELD == IREE_ASYNC_WAIT_FLAG_YIELD,
@@ -137,11 +139,92 @@ iree_status_t hrx_device_group_create_with_extensions(
   return status;
 }
 
+static const char* hrx_profile_file_path(void) {
+  const char* value = getenv("HRX_PROFILE_FILE");
+  return (value && value[0]) ? value : NULL;
+}
+
+static iree_status_t hrx_profile_file_sink_create(
+    const char* file_path, iree_allocator_t host_allocator,
+    iree_hal_profile_sink_t** out_sink) {
+  *out_sink = NULL;
+  if (!file_path || !file_path[0]) {
+    return iree_ok_status();
+  }
+
+  iree_io_file_handle_t* file_handle = NULL;
+  iree_status_t status = iree_io_file_handle_create(
+      IREE_IO_FILE_MODE_WRITE | IREE_IO_FILE_MODE_SEQUENTIAL_SCAN |
+          IREE_IO_FILE_MODE_SHARE_READ,
+      iree_make_cstring_view(file_path), /*initial_size=*/0, host_allocator,
+      &file_handle);
+  if (iree_status_is_ok(status)) {
+    status = iree_hal_profile_file_sink_create(file_handle, host_allocator,
+                                               out_sink);
+  }
+  iree_io_file_handle_release(file_handle);
+  return status;
+}
+
+static iree_status_t hrx_profile_data_families(
+    iree_hal_device_profiling_data_families_t* out_data_families) {
+  const char* value = getenv("HRX_PROFILE_MODE");
+  if (!value || !value[0] || strcmp(value, "queue") == 0) {
+    *out_data_families = IREE_HAL_DEVICE_PROFILING_DATA_QUEUE_EVENTS;
+  } else if (strcmp(value, "dispatch") == 0) {
+    *out_data_families = IREE_HAL_DEVICE_PROFILING_DATA_EXECUTABLE_METADATA |
+                         IREE_HAL_DEVICE_PROFILING_DATA_DISPATCH_EVENTS;
+  } else if (strcmp(value, "executable") == 0) {
+    *out_data_families = IREE_HAL_DEVICE_PROFILING_DATA_EXECUTABLE_METADATA |
+                         IREE_HAL_DEVICE_PROFILING_DATA_EXECUTABLE_TRACES;
+  } else if (strcmp(value, "all") == 0) {
+    *out_data_families = IREE_HAL_DEVICE_PROFILING_DATA_QUEUE_EVENTS |
+                         IREE_HAL_DEVICE_PROFILING_DATA_EXECUTABLE_METADATA |
+                         IREE_HAL_DEVICE_PROFILING_DATA_DEVICE_QUEUE_EVENTS |
+                         IREE_HAL_DEVICE_PROFILING_DATA_DISPATCH_EVENTS |
+                         IREE_HAL_DEVICE_PROFILING_DATA_EXECUTABLE_TRACES;
+  } else {
+    return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                            "unsupported HRX_PROFILE_MODE '%s'", value);
+  }
+
+  return iree_ok_status();
+}
+
+iree_status_t hrx_device_group_profile_from_environment(
+    hrx_device_group_t group) {
+  const char* file_path = hrx_profile_file_path();
+  if (!file_path) {
+    return iree_ok_status();
+  }
+  iree_hal_device_profiling_options_t options = {0};
+  IREE_RETURN_IF_ERROR(hrx_profile_data_families(&options.data_families));
+  iree_hal_profile_sink_t* sink = NULL;
+  IREE_RETURN_IF_ERROR(hrx_profile_file_sink_create(
+      file_path, group->runtime->host_allocator, &sink));
+  options.sink = sink;
+  iree_status_t status = iree_ok_status();
+  for (size_t i = 0; i < group->device_count && iree_status_is_ok(status);
+       ++i) {
+    status = hrx_device_profile_begin(&group->devices[i], &options);
+  }
+  iree_hal_profile_sink_release(sink);
+  return status;
+}
+
 hrx_status_t hrx_device_group_create(hrx_runtime_t runtime, size_t device_count,
                                      const hrx_device_create_params_t* devices,
                                      hrx_device_group_t* out_group) {
-  return hrx_status_from_iree(hrx_device_group_create_with_extensions(
-      runtime, device_count, devices, NULL, 0, out_group));
+  iree_status_t status = hrx_device_group_create_with_extensions(
+      runtime, device_count, devices, NULL, 0, out_group);
+  if (iree_status_is_ok(status)) {
+    status = hrx_device_group_profile_from_environment(*out_group);
+    if (!iree_status_is_ok(status)) {
+      hrx_device_group_release(*out_group);
+      *out_group = NULL;
+    }
+  }
+  return hrx_status_from_iree(status);
 }
 
 void hrx_device_group_retain(hrx_device_group_t group) {
