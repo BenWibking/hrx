@@ -40,7 +40,10 @@ typedef enum loom_cxx_import_flag_bits_e {
   // are host storage and are skipped, and helpers declaring workgroup storage
   // become required-inline.
   LOOM_CXX_IMPORT_FLAG_HOSTED = 1u << 1,
-  LOOM_CXX_IMPORT_FLAG_ALL = (1u << 2) - 1,
+  // Drop a kernel root whose lowering is rejected and retranslate the unit
+  // without it, instead of rejecting the whole translation unit.
+  LOOM_CXX_IMPORT_FLAG_DROP_FAILED_KERNELS = 1u << 2,
+  LOOM_CXX_IMPORT_FLAG_ALL = (1u << 3) - 1,
 } loom_cxx_import_flag_bits_t;
 typedef uint32_t loom_cxx_import_flags_t;
 
