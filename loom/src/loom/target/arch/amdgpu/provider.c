@@ -8,6 +8,7 @@
 
 #include "loom/ir/module.h"
 #include "loom/ops/callable_effects.h"
+#include "loom/ops/kernel/ops.h"
 #include "loom/pass/builder.h"
 #include "loom/target/arch/amdgpu/abi/call_abi.h"
 #include "loom/target/arch/amdgpu/descriptors/low_registry.h"
@@ -159,17 +160,71 @@ static iree_status_t loom_amdgpu_provider_select_profile(
   return iree_ok_status();
 }
 
+// Whether |op|, an op nested in its regions, or a function it calls directly
+// reads a launch fact that only a kernel's launch configuration fixes: the
+// workgroup size or count, or the dispatch-wide work-item id derived from
+// them. A retained native helper has no launch configuration, so the preamble
+// cannot lower these queries there, whether they are in the helper's own body
+// or in a callee that leaf-only selection expands into it. Device call graphs
+// are acyclic; |depth| bounds the walk regardless.
+static bool loom_amdgpu_op_queries_launch_shape(const loom_module_t* module,
+                                                const loom_op_t* op,
+                                                uint32_t depth) {
+  if (loom_kernel_workgroup_size_isa(op) ||
+      loom_kernel_workgroup_count_isa(op) ||
+      loom_kernel_workitem_dispatch_id_isa(op)) {
+    return true;
+  }
+  const loom_call_like_t call = loom_call_like_const_cast(module, op);
+  if (loom_call_like_isa(call) && depth > 0) {
+    const loom_symbol_ref_t callee = loom_call_like_callee(call);
+    if (loom_symbol_ref_is_valid(callee) &&
+        callee.symbol_id < module->symbols.count) {
+      const loom_op_t* defining_op =
+          module->symbols.entries[callee.symbol_id].defining_op;
+      if (defining_op && defining_op != op &&
+          loom_amdgpu_op_queries_launch_shape(module, defining_op,
+                                              depth - 1)) {
+        return true;
+      }
+    }
+  }
+  loom_region_t* const* regions = loom_op_regions(op);
+  for (uint8_t region_index = 0; region_index < op->region_count;
+       ++region_index) {
+    const loom_region_t* region = regions[region_index];
+    if (!region) {
+      continue;
+    }
+    for (uint16_t block_index = 0; block_index < region->block_count;
+         ++block_index) {
+      const loom_block_t* block = loom_region_const_block(region, block_index);
+      const loom_op_t* child_op = NULL;
+      loom_block_for_each_op(block, child_op) {
+        if (loom_amdgpu_op_queries_launch_shape(module, child_op, depth)) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
 static loom_target_call_policy_t loom_amdgpu_select_call_policy(
     const loom_resolved_target_t* resolved_target, const loom_module_t* module,
     loom_call_like_kind_t kind, loom_call_like_t call,
     loom_func_like_t callee) {
   (void)resolved_target;
-  (void)call;
   if (kind != LOOM_CALL_LIKE_KIND_SEMANTIC &&
       kind != LOOM_CALL_LIKE_KIND_LOW_INTERNAL) {
     return LOOM_TARGET_CALL_POLICY_REQUIRE_INLINE;
   }
   if (!loom_func_like_body(callee)) {
+    return LOOM_TARGET_CALL_POLICY_REQUIRE_INLINE;
+  }
+  // Workgroup size and count are exact only in a kernel whose launch
+  // configuration fixes them, so a helper that reads them expands into it.
+  if (loom_amdgpu_op_queries_launch_shape(module, callee.op, 16)) {
     return LOOM_TARGET_CALL_POLICY_REQUIRE_INLINE;
   }
   if (kind == LOOM_CALL_LIKE_KIND_SEMANTIC &&
@@ -188,7 +243,16 @@ static loom_target_call_policy_t loom_amdgpu_select_call_policy(
     }
   }
   if (kind == LOOM_CALL_LIKE_KIND_SEMANTIC) {
-    return LOOM_TARGET_CALL_POLICY_REQUIRE_LEAF;
+    // Source helpers stay native calls only when authored noinline. Retaining
+    // them automatically still breaks kernels whose helpers have divergent
+    // exits (cfg.cond_br: masked_region_exits_by_cfg) or receive private
+    // allocations made inside a caller's loop (buffer.alloca reuse,
+    // TARGET/092).
+    const bool explicit_noinline =
+        loom_call_like_inline_policy(call) == LOOM_INLINE_POLICY_NOINLINE ||
+        loom_func_like_inline_policy(callee) == LOOM_INLINE_POLICY_NOINLINE;
+    return explicit_noinline ? LOOM_TARGET_CALL_POLICY_REQUIRE_LEAF
+                             : LOOM_TARGET_CALL_POLICY_REQUIRE_INLINE;
   }
 
   // Physical carriers are known at the Low boundary. Use the same classifier
