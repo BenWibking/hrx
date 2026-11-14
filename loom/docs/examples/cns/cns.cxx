@@ -6,8 +6,8 @@
 //
 // Kernels of AMReX's GPU CNS test (Tests/GPU/CNS, Sod problem, no viscosity),
 // ported to Loom C++ with no AMReX dependency. The host driver (cns_loom.cpp)
-// launches them with hrx_stream_dispatch, one launch per box per kernel, in
-// the order AMReX's RK2 time step does.
+// launches them one launch per box per kernel, in the order AMReX's RK2 time
+// step does, either with hrx_stream_dispatch or as a recorded graph.
 //
 // Data layout, for a cubic box of `bs` cells per side:
 //   state S:  (bs+4)^3 cells x 7 components (2 ghost cells), per box
@@ -511,14 +511,17 @@ void cns_flux_to_dudt(unsigned elements, int bs, double dxinv0, double dxinv1,
   *d_index = box * cells * NCONS + at(i, j, k, n, bs, bs, bs);
 }
 
-// Stage 1: snew = sold + dt * dsdt.
+// Stage 1: snew = sold + dt * dsdt. The time step is read from device memory
+// so that a recorded graph can be replayed with a new time step.
 [[loom::kernel(configure)]]
-void cns_rk_update(unsigned elements, int bs, double dt,
+void cns_rk_update(unsigned elements, int bs,
+                   [[loom::noalias]] const double* time_step,
                    [[loom::noalias]] const double* sold,
                    [[loom::noalias]] const double* dsdt,
                    [[loom::noalias]] double* snew) {
   const unsigned e = element_index();
   if (e >= elements) return;
+  const double dt = time_step[0];
   int si, di;
   rk_indices(e, bs, &si, &di);
   snew[si] = sold[si] + dt * dsdt[di];
@@ -526,12 +529,14 @@ void cns_rk_update(unsigned elements, int bs, double dt,
 
 // Stage 2: snew = 0.5 * (snew + sold + dsdt * dt).
 [[loom::kernel(configure)]]
-void cns_rk2_update_2(unsigned elements, int bs, double dt,
+void cns_rk2_update_2(unsigned elements, int bs,
+                      [[loom::noalias]] const double* time_step,
                       [[loom::noalias]] const double* sold,
                       [[loom::noalias]] const double* dsdt,
                       [[loom::noalias]] double* snew) {
   const unsigned e = element_index();
   if (e >= elements) return;
+  const double dt = time_step[0];
   int si, di;
   rk_indices(e, bs, &si, &di);
   snew[si] = 0.5 * (snew[si] + sold[si] + dsdt[di] * dt);
