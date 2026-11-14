@@ -54,6 +54,9 @@ typedef enum loomc_cxx_import_flag_bits_e {
   /// host storage and are skipped, and helpers declaring workgroup storage
   /// become required-inline.
   LOOMC_CXX_IMPORT_FLAG_HOSTED = 1u << 1,
+  /// Drop kernel roots whose lowering is rejected instead of rejecting the
+  /// whole translation unit.
+  LOOMC_CXX_IMPORT_FLAG_DROP_FAILED_KERNELS = 1u << 2,
 } loomc_cxx_import_flag_bits_t;
 /// Bitmask of loomc_cxx_import_flag_bits_t values.
 typedef uint32_t loomc_cxx_import_flags_t;
@@ -327,7 +330,8 @@ LOOMC_API_EXPORT void loomc_cxx_unit_release(loomc_cxx_unit_t* unit);
 /// @param workspace Workspace backing the returned module's arena storage.
 /// @param unit Unit from loomc_cxx_unit_parse. It is not reparsed.
 /// @param options Import policy, or NULL for defaults: roots, kernel_ref roots,
-/// floating-point model, path mapper, and the HOSTED flag. Source configuration
+/// floating-point model, path mapper, and the HOSTED and DROP_FAILED_KERNELS
+/// flags. Source configuration
 /// fields were fixed when the unit was parsed and are ignored.
 /// @param allocator Host allocator for public handles and temporary adapters.
 /// @param out_module Receives one owned module on successful translation.
