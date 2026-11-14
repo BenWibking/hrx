@@ -938,6 +938,35 @@ TEST_F(KernelRefImportTest, KernelLaunchesFollowKernelArgumentFlattening) {
   expect_leaves(*fixed, {{1, 0, 8}});
 }
 
+TEST_F(KernelRefImportTest, DroppedKernelRefKernelsKeepUnavailableDescriptors) {
+  std::string source = std::string(kKernelRefSource) + R"cxx(
+struct Bad {
+  float* y;
+  [[loom::inline]] void operator()() const { if (y < y + 1) y[0] = 2.0f; }
+};
+const loom::kernel::descriptor* host_bad() { return describe<Bad>(); }
+)cxx";
+  UseKernelRefs({kBodyReference, kOtherReference, kFixedReference,
+                 "_ZN4loom6kernel10kernel_refIXadL_Z3runI3BadEvT_EEEE"});
+  const auto view = iree_make_string_view(source.data(), source.size());
+  // Without the drop policy the unsupported kernel rejects the import.
+  IREE_ASSERT_OK(ImportUnit(view));
+  EXPECT_EQ(module_, nullptr);
+  EXPECT_GT(error_count_, 0);
+  error_count_ = 0;
+  options_.flags |= LOOM_CXX_IMPORT_FLAG_DROP_FAILED_KERNELS;
+  IREE_ASSERT_OK(ImportUnit(view));
+  ASSERT_NE(module_, nullptr);
+  EXPECT_EQ(error_count_, 0);
+  EXPECT_EQ(Print().find("_Z3runI3BadEvT_"), std::string::npos);
+  const auto* bad =
+      Launch("_ZN4loom6kernel10kernel_refIXadL_Z3runI3BadEvT_EEEE");
+  ASSERT_NE(bad, nullptr);
+  EXPECT_FALSE(bad->available);
+  ASSERT_NE(Launch(kBodyReference), nullptr);
+  EXPECT_TRUE(Launch(kBodyReference)->available);
+}
+
 // Hosted code branches on loom::target::is_device(); the device pass imports
 // only the device arm, so host-only calls never reach device code.
 TEST_F(KernelRefImportTest, HostedImportKeepsOnlyTheDeviceArmOfDeviceQueries) {
@@ -1114,20 +1143,33 @@ TEST_F(ImportTest, ParsedUnitRejectsSourceErrorsOnce) {
   EXPECT_GT(error_count_, 0);
 }
 
-TEST_F(ImportTest, ParsedUnitDiagnosticsFollowTheImportSink) {
+TEST_F(KernelRefImportTest, ParsedUnitDiagnosticsFollowTheImportSink) {
   // The parse sink belongs to the parse; an import reports through its own.
+  options_.flags |=
+      LOOM_CXX_IMPORT_FLAG_HOSTED | LOOM_CXX_IMPORT_FLAG_DROP_FAILED_KERNELS;
+  options_.triple = IREE_SV("x86_64-linux-gnu");
+  std::string source = std::string(kKernelRefSource) + R"cxx(
+struct Bad {
+  float* y;
+  [[loom::inline]] void operator()() const { if (y < y + 1) y[0] = 2.0f; }
+};
+const loom::kernel::descriptor* host_bad() { return describe<Bad>(); }
+)cxx";
+  UseKernelRefs({kBodyReference, kOtherReference, kFixedReference,
+                 "_ZN4loom6kernel10kernel_refIXadL_Z3runI3BadEvT_EEEE"});
   loom_cxx_unit_t* unit = nullptr;
-  IREE_ASSERT_OK(loom_cxx_unit_parse(IREE_SV("int counter = 0;\n"),
-                                     IREE_SV("/app/source.cpp"), &options_,
-                                     iree_allocator_system(), &unit));
+  IREE_ASSERT_OK(loom_cxx_unit_parse(
+      iree_make_string_view(source.data(), source.size()),
+      IREE_SV("/app/source.cpp"), &options_, iree_allocator_system(), &unit));
   ASSERT_NE(unit, nullptr);
   EXPECT_EQ(diagnostic_count_, 0);
   loom_cxx_unit_set_diagnostic_sink(unit, {});
-  // Mutable global storage is rejected when the unit is imported.
   IREE_ASSERT_OK(loom_cxx_import_unit(unit, &context_, &pool_, &options_,
                                       iree_allocator_system(), &module_));
-  EXPECT_EQ(module_, nullptr);
-  EXPECT_GT(error_count_, 0);
+  ASSERT_NE(module_, nullptr);
+  EXPECT_GT(diagnostic_count_, 0);  // the dropped kernel's warning
+  EXPECT_EQ(error_count_, 0);
+  EXPECT_EQ(loom::cxx_import::unit_statistics(unit).dropped_kernel_count, 1u);
   loom_cxx_unit_free(unit);
 }
 

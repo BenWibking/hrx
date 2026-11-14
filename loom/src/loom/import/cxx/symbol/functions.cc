@@ -267,13 +267,19 @@ void Functions::select(std::span<const iree_string_view_t> roots) {
   const bool kernel_ref_roots = options_ && options_->kernel_ref_count;
   if (kernel_ref_roots) {
     // Offload mode: export exactly the kernels named by the kernel_ref
-    // specializations the host code references.
+    // specializations the host code references, except roots this import
+    // already dropped.
     for (auto* kernel : kernel_ref_kernels(
              std::span(options_->kernel_refs, options_->kernel_ref_count),
              root)) {
+      if (excluded_kernels_ && excluded_kernels_->contains(kernel->canonical())) {
+        continue;
+      }
       exported_.insert(kernel);
+      current_origin_ = kernel->canonical();
       declare(kernel);
     }
+    current_origin_ = nullptr;
   } else if (!roots.empty()) {
     std::unordered_map<std::string, std::vector<cxx::FunctionSymbol*>>
         candidates;
@@ -652,9 +658,16 @@ void Functions::prepare_analysis(cxx::FunctionSymbol* function, Types& types,
 void Functions::analyze(Types& types) {
   std::vector<AnalyzedFunction> analyzed_functions;
   std::vector<AnalyzedCall> analyzed_calls;
-  for (const auto& instance : pending_) {
-    prepare_analysis(instance.symbol, types, analyzed_functions,
-                     analyzed_calls);
+  for (size_t index = 0; index < pending_.size(); ++index) {
+    try {
+      prepare_analysis(pending_[index].symbol, types, analyzed_functions,
+                       analyzed_calls);
+    } catch (const SourceRejected&) {
+      if (diagnostics_.soft_reject() && pending_origin(index)) {
+        throw KernelRejected{pending_origin(index)};
+      }
+      throw;
+    }
   }
 
   // Constructor receiver storage is a local fact but must be selected before
@@ -1604,6 +1617,7 @@ loom_symbol_ref_t Functions::retain(FunctionInstance instance,
   auto retained = FunctionInstance{body, instance.receiver_abi};
   auto callee = create_symbol(retained, body->declaration());
   pending_.push_back(retained);
+  pending_origins_.push_back(current_origin_);
   return callee;
 }
 

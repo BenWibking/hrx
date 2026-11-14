@@ -18,8 +18,9 @@
 //      expansions outside it), so the host code is unaffected by the import.
 //   2. Device: if host code references loom::kernel::kernel_ref descriptors,
 //      Loom's importer translates the kernels its host code references, and
-//      the Loom compiler compiles them for --loom-target. A kernel the
-//      importer or the device compiler rejects fails the compile.
+//      the Loom compiler compiles them for --loom-target. Kernels the importer
+//      or the device compiler rejects are dropped when the drop policy allows,
+//      and the unit is translated again without them (it is not reparsed).
 //   3. Output: the device code object is embedded in the host module with an
 //      embedded_code_object record that tells a runtime how to load it. No
 //      static constructor registers or loads it: a runtime loads it when it
@@ -32,8 +33,10 @@
 //      to the object, that packs the kernel arguments: it combines the
 //      importer's host leaves (source offsets and sizes in the host objects)
 //      with the kernel argument layout that the device compiler reports for
-//      the compiled kernel in its artifact manifest. The module is emitted as
-//      one object file.
+//      the compiled kernel in its artifact manifest. Descriptors of kernels without
+//      device code are defined without their available flag, so launching
+//      them fails at run time instead of at link time. The module is emitted
+//      as one object file.
 
 #include <cxx/memory_layout.h>
 #include <cxx/mlir/llvm_codegen.h>
@@ -102,6 +105,8 @@ namespace {
 constexpr std::string_view kTool = "loom-cxx";
 // Itanium mangling prefix of loom::kernel::kernel_ref<...> variables.
 constexpr std::string_view kKernelRefPrefix = "_ZN4loom6kernel10kernel_ref";
+// Rounds of compile-rejection exclusion before a device pass gives up.
+constexpr int kMaxDeviceRounds = 5;
 // loom::kernel::descriptor_version in loomcxx/kernel_ref.h.
 constexpr uint32_t kDescriptorVersion = 3;
 // KernelLaunchLeaf::kind of a device pointer passed as a buffer binding.
@@ -131,6 +136,7 @@ struct Options {
   // Device options.
   std::string loom_target;
   std::string loom_format;
+  bool drop_failed_kernels = false;
   bool stats = false;
   bool verbose = false;
   std::string keep_directory;
@@ -173,6 +179,9 @@ void print_help() {
       "      device target, such as amdgpu:gfx90a\n"
       "  --loom-format=FORMAT\n"
       "      device artifact format (default amdgpu-hsaco for amdgpu)\n"
+      "  --loom-drop-failed-kernels\n"
+      "      drop kernels that the importer or the device compiler\n"
+      "      rejects and keep the rest; their descriptors stay unavailable\n"
       "  --loom-stats\n"
       "      report parse counts and phase times\n"
       "  --loom-keep=DIR\n"
@@ -289,6 +298,8 @@ Options parse_options(int argc, char** argv) {
       options.loom_target = std::string(arg.substr(14));
     } else if (starts_with(arg, "--loom-format=")) {
       options.loom_format = std::string(arg.substr(14));
+    } else if (arg == "--loom-drop-failed-kernels") {
+      options.drop_failed_kernels = true;
     } else if (arg == "--loom-stats") {
       options.stats = true;
     } else if (arg == "--loom-verbose") {
@@ -722,12 +733,15 @@ class Driver {
   // Runs the device pass in a work directory. Returns false when the pass
   // failed and the failure policy fails the compile.
   bool run_device_pass();
-  // Imports and compiles the device code. Returns false when the device pass
-  // failed.
+  // Imports and compiles the device code, applying the drop policy. Returns
+  // false when the device pass failed.
   bool device_pass();
-  // Imports the kernels of kernel_refs_.
-  bool import_device_module(std::string& bytecode_out, bool& has_kernels);
-  bool compile_device_module(const std::string& bytecode);
+  // Imports the kernels of kernel_refs_ other than |excluded| (kernel_ref
+  // symbols).
+  bool import_device_module(const std::vector<std::string>& excluded, int round,
+                            std::string& bytecode_out, bool& has_kernels);
+  bool compile_device_module(const std::string& bytecode,
+                             std::vector<std::string>& rejected);
   void read_argument_layouts(const loomc_result_t* result);
   void read_export_ordinals();
   [[noreturn]] void device_failure(std::string_view stage,
@@ -1029,15 +1043,23 @@ void Driver::device_failure(std::string_view stage, std::string_view log) {
   throw Failure{};
 }
 
-bool Driver::import_device_module(std::string& bytecode, bool& has_kernels) {
+bool Driver::import_device_module(const std::vector<std::string>& excluded,
+                                  int round,
+                                  std::string& bytecode, bool& has_kernels) {
   auto start = Clock::now();
   // The kernels to import are exactly those whose descriptors the host code
-  // references.
+  // references, less those the device compiler rejected. A descriptor the
+  // import reports nothing for stays unavailable.
   std::vector<loomc_string_view_t> kernel_refs;
   for (const auto& symbol : kernel_refs_) {
-    kernel_refs.push_back(loomc_make_cstring_view(symbol.c_str()));
+    if (std::find(excluded.begin(), excluded.end(), symbol) == excluded.end()) {
+      kernel_refs.push_back(loomc_make_cstring_view(symbol.c_str()));
+    }
   }
   loomc_cxx_import_options_t options = import_options();
+  if (options_.drop_failed_kernels) {
+    options.flags |= LOOMC_CXX_IMPORT_FLAG_DROP_FAILED_KERNELS;
+  }
   options.kernel_refs = kernel_refs.data();
   options.kernel_ref_count = kernel_refs.size();
 
@@ -1057,6 +1079,23 @@ bool Driver::import_device_module(std::string& bytecode, bool& has_kernels) {
     std::fputs(log.c_str(), stderr);
   }
 
+  const auto statistics = loom::cxx_import::unit_statistics(native_unit);
+  if (succeeded && statistics.dropped_kernel_count > 0 && round == 1) {
+    std::fprintf(stderr, "%s: dropped %llu kernel(s) in %s\n",
+                 kTool.data(),
+                 (unsigned long long)statistics.dropped_kernel_count,
+                 options_.source.c_str());
+    int printed = 0;
+    for (auto line : lines(log)) {
+      if (line.find("warning [LOWERING") == std::string_view::npos) {
+        continue;
+      }
+      if (++printed > 40) {
+        break;
+      }
+      std::fprintf(stderr, "  dropped: %.*s\n", (int)line.size(), line.data());
+    }
+  }
   if (!succeeded || !module) {
     import_seconds_ += seconds_since(start);
     device_failure("device import", log);
@@ -1123,7 +1162,8 @@ bool Driver::import_device_module(std::string& bytecode, bool& has_kernels) {
   return true;
 }
 
-bool Driver::compile_device_module(const std::string& bytecode) {
+bool Driver::compile_device_module(const std::string& bytecode,
+                                   std::vector<std::string>& rejected) {
   auto start = Clock::now();
   // The device compiler gets the serialized module, exactly as a separate
   // loom-compile process would read it.
@@ -1204,7 +1244,59 @@ bool Driver::compile_device_module(const std::string& bytecode) {
   }
   device_compile_seconds_ += seconds_since(start);
   if (!succeeded) {
-    device_failure("device compile", log);
+    // Kernels the device compiler rejected, by export name.
+    std::set<std::string> names;
+    for (loomc_host_size_t i = 0;
+         i < loomc_result_diagnostic_count(result.get()); ++i) {
+      const auto* diagnostic = loomc_result_diagnostic_at(result.get(), i);
+      if (diagnostic->severity != LOOMC_DIAGNOSTIC_SEVERITY_ERROR) {
+        continue;
+      }
+      std::string name(
+          diagnostic->export_name.data ? diagnostic->export_name.data : "",
+          diagnostic->export_name.size);
+      for (loomc_host_size_t j = 0;
+           name.empty() && j < diagnostic->parameter_count; ++j) {
+        const auto& parameter = diagnostic->parameters[j];
+        if (std::string_view(parameter.name.data, parameter.name.size) ==
+            "export_name") {
+          name.assign(parameter.value.data, parameter.value.size);
+        }
+      }
+      if (!name.empty()) {
+        names.insert(name);
+      }
+    }
+    rejected.assign(names.begin(), names.end());
+    if (rejected.empty() || !options_.drop_failed_kernels) {
+      rejected.clear();
+      device_failure("device compile", log);
+      return false;
+    }
+    std::set<std::string> reasons;
+    for (auto line : lines(log)) {
+      if (line.find("error [") == std::string_view::npos) {
+        continue;
+      }
+      std::string reason(line);
+      constexpr std::string_view kContext =
+          "config '__loom_target_context_0_0' ";
+      if (auto context = reason.find(kContext); context != std::string::npos) {
+        reason = reason.substr(context + kContext.size());
+      }
+      reasons.insert(reason.substr(0, 200));
+    }
+    std::fprintf(stderr,
+                 "%s: compile rejected %zu kernel(s) in %s; excluding and "
+                 "retrying\n",
+                 kTool.data(), rejected.size(), options_.source.c_str());
+    int printed = 0;
+    for (const auto& reason : reasons) {
+      if (++printed > 10) {
+        break;
+      }
+      std::fprintf(stderr, "  compile-dropped: %s\n", reason.c_str());
+    }
     return false;
   }
   for (loomc_host_size_t i = 0; i < loomc_result_artifact_count(result.get());
@@ -1353,15 +1445,43 @@ bool Driver::device_pass() {
                  kTool.data(), options_.source.c_str());
     throw Failure{};
   }
-  std::string bytecode;
-  bool has_kernels = false;
-  if (!import_device_module(bytecode, has_kernels)) {
-    return false;
+  std::vector<std::string> excluded;
+  for (int round = 1; round <= kMaxDeviceRounds; ++round) {
+    std::string bytecode;
+    bool has_kernels = false;
+    if (!import_device_module(excluded, round, bytecode, has_kernels)) {
+      return false;
+    }
+    if (!has_kernels) {
+      return true;
+    }
+    std::vector<std::string> rejected;
+    if (compile_device_module(bytecode, rejected)) {
+      return true;
+    }
+    if (rejected.empty()) {
+      return false;  // already reported
+    }
+    if (round == kMaxDeviceRounds) {
+      device_failure("device compile", "error [TOOL]: retry limit reached\n");
+      return false;
+    }
+    // Retry without the kernel_ref roots of the rejected exports.
+    const size_t before = excluded.size();
+    for (const auto& launch : launches_) {
+      if (launch.available &&
+          std::find(rejected.begin(), rejected.end(), launch.export_name) !=
+              rejected.end()) {
+        excluded.push_back(launch.symbol);
+      }
+    }
+    if (excluded.size() == before) {
+      device_failure("device compile",
+                     "error [TOOL]: rejected exports name no kernel_ref root\n");
+      return false;
+    }
   }
-  if (!has_kernels) {
-    return true;
-  }
-  return compile_device_module(bytecode);
+  return false;
 }
 
 void Driver::embed_device_code() {

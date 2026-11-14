@@ -40,11 +40,14 @@ bool unit_has_error(const loom_cxx_unit_t* unit);
 struct UnitStatistics {
   // Completed loom_cxx_import_unit() calls on the unit.
   uint64_t import_count = 0;
+  // Kernel roots dropped by the most recent import (DROP_FAILED_KERNELS).
+  uint64_t dropped_kernel_count = 0;
 };
 UnitStatistics unit_statistics(const loom_cxx_unit_t* unit);
 
 // Host launch facts of every kernel_ref root of the most recent successful
 // import, in request order.
+// Kernels that import dropped or excluded are listed without availability.
 // A single-source driver combines these with the native argument layout of
 // the compiled kernels to define the host's descriptors.
 const std::vector<KernelLaunch>& unit_kernel_launches(

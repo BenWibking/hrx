@@ -7,6 +7,8 @@
 #include "loom/import/cxx/translation.h"
 
 #include <cxx/ast.h>
+#include <cstdio>
+#include <cstdlib>
 #include <cxx/ast_interpreter.h>
 #include <cxx/control.h>
 #include <cxx/initialization.h>
@@ -135,13 +137,28 @@ class Translator final : private Initialization::Evaluation {
                             loom_module_block(module_), &builder_);
   }
 
-  void translate(std::vector<KernelLaunch>* out_kernel_launches) {
+  void translate(const std::unordered_set<cxx::FunctionSymbol*>* excluded,
+                 std::vector<KernelLaunch>* out_kernel_launches) {
+    const bool drop = excluded != nullptr;
     functions_.set_import_options(&options_);
+    functions_.set_excluded_kernels(excluded);
     functions_.select({options_.roots, options_.root_count});
+    diagnostics_.set_soft_reject(drop);
     functions_.analyze(types_);
     for (size_t index = 0; index < functions_.pending().size(); ++index) {
-      function(functions_.pending()[index]);
+      auto* origin = functions_.pending_origin(index);
+      functions_.set_current_origin(origin);
+      try {
+        function(functions_.pending()[index]);
+      } catch (const SourceRejected&) {
+        if (drop && origin) {
+          throw KernelRejected{origin};
+        }
+        throw;
+      }
     }
+    functions_.set_current_origin(nullptr);
+    diagnostics_.set_soft_reject(false);
     functions_.build_declarations(types_, locations_, &builder_);
     functions_.build_benchmarks(locations_, &builder_);
     immutable_objects_.build(&builder_);
@@ -8745,9 +8762,10 @@ class Translator final : private Initialization::Evaluation {
 
 void translate(cxx::TranslationUnit& unit, Diagnostics& diagnostics,
                loom_module_t* module, const loom_cxx_import_options_t& options,
+               const std::unordered_set<cxx::FunctionSymbol*>* excluded,
                std::vector<KernelLaunch>* out_kernel_launches) {
   Translator(unit, diagnostics, module, options)
-      .translate(out_kernel_launches);
+      .translate(excluded, out_kernel_launches);
 }
 
 }  // namespace loom::cxx_import

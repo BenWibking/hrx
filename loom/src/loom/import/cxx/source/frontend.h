@@ -52,6 +52,10 @@ class Diagnostics final : public cxx::DiagnosticsClient {
                            std::string_view message);
   SourceContents& contents() const { return *contents_; }
   bool has_error() const { return has_error_; }
+  // While set, lowering rejections are reported as warnings so a kernel root
+  // kernel can be dropped without failing the whole translation unit.
+  void set_soft_reject(bool soft) { soft_reject_ = soft; }
+  bool soft_reject() const { return soft_reject_; }
   // Propagates sink failure and source rejection at a parser-safe boundary.
   // cxx forwards diagnostics from noexcept destructors, so report never throws.
   void finish();
@@ -70,6 +74,7 @@ class Diagnostics final : public cxx::DiagnosticsClient {
   SourceContents* contents_ = nullptr;
   // Forwarded diagnostics can bypass cxx's counter; this owns admission.
   bool has_error_ = false;
+  bool soft_reject_ = false;
   // First sink failure, retained until a safe point can unwind the frontend.
   iree_status_t status_ = iree_ok_status();
 };

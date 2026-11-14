@@ -51,7 +51,8 @@ using pack_function = void (*)(void* kernarg, const void* const* parameters);
 // and packs kernel arguments with a generated pack_function instead of a
 // table of leaves.
 inline constexpr unsigned int descriptor_version = 3;
-// The kernel was imported and compiled.
+// The kernel was imported and compiled. Without it the kernel was dropped, and
+// the descriptor names no device code.
 inline constexpr unsigned int descriptor_flag_available = 1u << 0;
 
 // The device code object an object file embeds, with what loading it needs.
