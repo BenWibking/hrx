@@ -234,6 +234,13 @@ class Functions {
   // Discovery order grows as declare reaches helpers. Spans are invalidated by
   // growth; consumers obtain the next indexed entry after each body finishes.
   std::span<const FunctionInstance> pending() const { return pending_; }
+  // Import options borrowed for the translation: the hosted profile.
+  void set_import_options(const loom_cxx_import_options_t* options) {
+    options_ = options;
+  }
+  bool hosted() const {
+    return options_ && (options_->flags & LOOM_CXX_IMPORT_FLAG_HOSTED);
+  }
   // Builds the selected native definition and launch contract at the caller's
   // module insertion point. The caller then enters and fills the returned body.
   DefinedFunction define(FunctionInstance instance, Types& types,
@@ -381,6 +388,8 @@ class Functions {
   // Selected externally visible definitions; other reached helpers stay
   // private.
   std::unordered_set<cxx::FunctionSymbol*> exported_;
+  // Mutable namespace-scope variable definitions skipped at collection.
+  std::unordered_set<cxx::VariableSymbol*> mutable_globals_;
   // Reached bodyless declarations whose names must remain stable for linking.
   std::unordered_set<cxx::FunctionSymbol*> external_;
   // Internal owned results constructed directly in a caller-provided object.
@@ -401,6 +410,7 @@ class Functions {
       callees_;
   // Reachable worklist in deterministic discovery order.
   std::vector<FunctionInstance> pending_;
+  const loom_cxx_import_options_t* options_ = nullptr;
   // Reachable bodyless declarations in deterministic discovery order.
   std::vector<FunctionDeclaration> pending_declarations_;
   // Canonical declarations inherit one exact name borrowed from source text.

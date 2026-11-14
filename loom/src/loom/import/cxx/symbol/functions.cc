@@ -11,6 +11,7 @@
 #include <cxx/ast_rewriter.h>
 #include <cxx/attributes.h>
 #include <cxx/const_int.h>
+#include <cxx/ast_visitor.h>
 #include <cxx/const_value.h>
 #include <cxx/control.h>
 #include <cxx/decl.h>
@@ -174,10 +175,36 @@ loom_inline_policy_t source_inline_policy(cxx::FunctionSymbol* function) {
   return LOOM_INLINE_POLICY_UNSPECIFIED;
 }
 
-bool requires_inline_expansion(cxx::FunctionSymbol* function) {
+// Whether a function body declares a [[loom::workgroup]] (__shared__) local.
+class WorkgroupStorageFinder final : public cxx::ASTVisitor {
+ public:
+  bool found = false;
+  void visit(cxx::InitDeclaratorAST* ast) override {
+    if (ast->symbol && annotated(ast->symbol, "workgroup")) {
+      found = true;
+    }
+    cxx::ASTVisitor::visit(ast);
+  }
+  void visit(cxx::LambdaExpressionAST*) override {}
+};
+
+bool declares_workgroup_storage(cxx::FunctionSymbol* function) {
+  auto* declaration = function->declaration();
+  if (!declaration || !declaration->functionBody) {
+    return false;
+  }
+  WorkgroupStorageFinder finder;
+  finder.accept(declaration->functionBody);
+  return finder.found;
+}
+
+bool requires_inline_expansion(cxx::FunctionSymbol* function, bool hosted) {
   // Special members are intermediate callables over importer-owned receiver
   // ABIs. Their call boundaries must be consumed before executable lowering.
-  return function->isConstructor() || function->isDestructor();
+  // In hosted single-source mode (HIP-style __shared__ in device helpers),
+  // workgroup storage in a helper exists only once inlined into a kernel.
+  return function->isConstructor() || function->isDestructor() ||
+         (hosted && declares_workgroup_storage(function));
 }
 
 uint8_t source_temperature(cxx::FunctionSymbol* function) {
@@ -711,7 +738,14 @@ void Functions::collect(cxx::List<cxx::DeclarationAST*>* declarations,
 void Functions::collect(cxx::DeclarationAST* declaration,
                         DeclarationScope scope,
                         std::vector<cxx::FunctionSymbol*>& definitions) {
+  if (!declaration) {
+    return;
+  }
   if (auto* function = cxx::ast_cast<cxx::FunctionDefinitionAST>(declaration)) {
+    // A definition the frontend could not declare has no symbol.
+    if (!function->symbol) {
+      return;
+    }
     admit_declaration(function->symbol, function->attributeList, function,
                       scope);
     // A device query's host definition is never imported: every call folds
@@ -746,6 +780,9 @@ void Functions::collect(cxx::DeclarationAST* declaration,
       if (auto* simple =
               cxx::ast_cast<cxx::SimpleDeclarationAST>(pattern->declaration)) {
         for (auto* declarator : cxx::ListView{simple->initDeclaratorList}) {
+          if (!declarator) {
+            continue;
+          }
           if (auto* function =
                   cxx::symbol_cast<cxx::FunctionSymbol>(declarator->symbol)) {
             intrinsics_.declaration(function, simple->attributeList,
@@ -753,7 +790,8 @@ void Functions::collect(cxx::DeclarationAST* declaration,
           }
         }
       } else if (auto* function = cxx::ast_cast<cxx::FunctionDefinitionAST>(
-                     pattern->declaration)) {
+                     pattern->declaration);
+                 function && function->symbol) {
         intrinsics_.declaration(function->symbol, function->attributeList,
                                 function);
       }
@@ -764,6 +802,9 @@ void Functions::collect(cxx::DeclarationAST* declaration,
   } else if (auto* alias =
                  cxx::ast_cast<cxx::AliasDeclarationAST>(declaration)) {
     admit_declaration(nullptr, alias->attributeList, alias, scope);
+    if (!alias->typeId) {
+      return;
+    }
     reject_misplaced_binding_attributes(unit_, diagnostics_,
                                         alias->typeId->attributeList);
     reject_misplaced_binding_declarator(unit_, diagnostics_,
@@ -799,6 +840,9 @@ void Functions::collect(cxx::DeclarationAST* declaration,
       }
     }
     for (auto* declarator : cxx::ListView{simple->initDeclaratorList}) {
+      if (!declarator) {
+        continue;
+      }
       auto* function =
           cxx::symbol_cast<cxx::FunctionSymbol>(declarator->symbol);
       bool is_module_metadata = admit_declaration(
@@ -822,9 +866,17 @@ void Functions::collect(cxx::DeclarationAST* declaration,
              !(variable->isConstexpr() ||
                (unit_.typeTraits().is_const(variable->type()) &&
                 variable->constValue())))) {
-          diagnostics_.reject(unit_, declarator,
-                              "global storage definitions require a "
-                              "global-storage projection");
+          // Mutable global storage has no projection. A hosted single-source
+          // unit is a host compile: its mutable globals are host storage that
+          // device code cannot reference, so they are skipped like the rest
+          // of the host-only code. Otherwise reject.
+          if (!hosted()) {
+            diagnostics_.reject(unit_, declarator,
+                                "global storage definitions require a "
+                                "global-storage projection");
+          }
+          mutable_globals_.insert(variable);
+          continue;
         }
         immutable_objects_.retain_definition(variable, declarator);
       }
@@ -894,7 +946,7 @@ bool Functions::admit_declaration(
         });
   }
   if (function) {
-    const bool requires_inline = requires_inline_expansion(function);
+    const bool requires_inline = requires_inline_expansion(function, hosted());
     bool found_inline_policy = false;
     bool found_temperature = false;
     bool found_retain = false;
@@ -2254,7 +2306,7 @@ DefinedFunction Functions::define(FunctionInstance instance, Types& types,
     const auto target = target_definitions_.reference(symbol);
     const bool link_once =
         exported_.contains(symbol) && symbol->canonical()->isInline();
-    const bool requires_inline = requires_inline_expansion(symbol);
+    const bool requires_inline = requires_inline_expansion(symbol, hosted());
     const loom_inline_policy_t inline_policy =
         requires_inline ? LOOM_INLINE_POLICY_INLINE
                         : source_inline_policy(symbol);
