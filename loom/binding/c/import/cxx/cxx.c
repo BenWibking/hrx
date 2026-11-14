@@ -37,6 +37,10 @@ IREE_STATIC_ASSERT_ENUM_EQ(
 IREE_STATIC_ASSERT_ENUM_EQ(LOOMC_CXX_IMPORT_FLAG_HOSTED,
                            LOOM_CXX_IMPORT_FLAG_HOSTED,
                            "public hosted flag matches the native importer");
+IREE_STATIC_ASSERT_ENUM_EQ(
+    LOOMC_CXX_IMPORT_FLAG_DROP_FAILED_KERNELS,
+    LOOM_CXX_IMPORT_FLAG_DROP_FAILED_KERNELS,
+    "public drop-failed-kernels flag matches the native importer");
 
 enum {
   LOOMC_CXX_SOURCE_PATH_BLOCK_SIZE = 8 * 1024,

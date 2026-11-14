@@ -93,6 +93,7 @@ const loom::kernel::descriptor* ranges() {
 RANGES_REF = "_ZN4loom6kernel10kernel_refIXadL_Z3runI6RangesEvT_EEEE"
 
 BODY_REF = "_ZN4loom6kernel10kernel_refIXadL_Z3runI4BodyEvT_EEEE"
+BAD_REF = "_ZN4loom6kernel10kernel_refIXadL_Z3runI3BadEvT_EEEE"
 
 
 class Elf:
@@ -461,8 +462,7 @@ int host_only(int value) { return value; }
         self.compile(source, "-UFOO", "-DFOO=1", "-U__linux__")
         self.compile(source, "-DFOO=1", expect_success=False)
 
-    def test_rejected_kernels_are_compile_errors(self):
-        # The importer rejects Bad, so the unit does not compile.
+    def test_dropped_kernels_keep_unavailable_descriptors(self):
         source = (
             KERNEL_PRELUDE
             + """
@@ -478,8 +478,65 @@ const loom::kernel::descriptor* bad() {
 }
 """
         )
-        _, stderr, _ = self.compile(source, expect_success=False)
-        self.assertIn("device import failed", stderr)
+        # Without the drop policy the unsupported kernel fails the compile.
+        self.compile(source, expect_success=False)
+        elf, stderr, _ = self.compile(source, "--loom-drop-failed-kernels")
+        self.assertIn("dropped 1 kernel(s)", stderr)
+        self.assertIn("  dropped: ", stderr)
+        self.assertIn("preprocess=1 parse=1", stderr)
+        self.assertNoExportedKernelRefs(elf)
+        for symbol, available in ((BODY_REF, 1), (BAD_REF, 0)):
+            descriptor = elf.descriptor(symbol)
+            self.assertEqual(
+                (descriptor["version"], descriptor["flags"]),
+                (DESCRIPTOR_VERSION, available),
+            )
+            self.assertEqual(descriptor["code_object"] is not None, bool(available))
+        self.assertIsNone(elf.descriptor(BAD_REF)["pack"])
+        self.assertTrue(self.device_code_objects(elf))
+
+    def test_compile_rejected_kernels_are_excluded_and_retried(self):
+        # The importer admits Big, but its private array exceeds the device's
+        # scratch limit, so the device compiler rejects it. The driver drops
+        # the kernel's kernel_ref root, imports and compiles again, and keeps
+        # Body.
+        big_ref = "_ZN4loom6kernel10kernel_refIXadL_Z3runI3BigEvT_EEEE"
+        source = (
+            KERNEL_PRELUDE
+            + """
+struct Big {
+  float* y;
+  [[loom::inline]] void operator()() const {
+    float scratch[40000];
+    for (unsigned k = 0; k < 40000; ++k) scratch[k] = y[k];
+    unsigned i = static_cast<unsigned>(loom::kernel::workitem::id.x);
+    y[0] = scratch[(i * 7u) % 40000u];
+  }
+};
+const loom::kernel::descriptor* good() {
+  return &loom::kernel::kernel_ref<&run<Body>>;
+}
+const loom::kernel::descriptor* big() {
+  return &loom::kernel::kernel_ref<&run<Big>>;
+}
+"""
+        )
+        # Without the drop policy the rejected kernel fails the compile.
+        self.compile(source, expect_success=False)
+        elf, stderr, _ = self.compile(source, "--loom-drop-failed-kernels")
+        self.assertIn("compile rejected 1 kernel(s)", stderr)
+        self.assertIn("excluding and retrying", stderr)
+        self.assertIn("compile-dropped: ", stderr)
+        self.assertIn("preprocess=1 parse=1", stderr)
+        self.assertIn("imports=2 device_compiles=2", stderr)
+        for symbol, available in ((BODY_REF, 1), (big_ref, 0)):
+            descriptor = elf.descriptor(symbol)
+            self.assertEqual(
+                (descriptor["version"], descriptor["flags"]),
+                (DESCRIPTOR_VERSION, available),
+            )
+        self.assertIsNone(elf.descriptor(big_ref)["pack"])
+        self.assertTrue(self.device_code_objects(elf))
 
     def test_export_ordinals_number_the_code_object_exports(self):
         # Several kernels in one code object: each descriptor names its own
@@ -525,6 +582,36 @@ const loom::kernel::descriptor* entries(int i) {
             if name and shndx == SHN_UNDEF
         ]
         self.assertEqual(undefined, [])
+
+    def test_objects_load_no_code_object_at_startup(self):
+        # Objects whose kernels are launched, dropped or both carry their code
+        # object without any startup code: a program that launches nothing
+        # never loads one.
+        source = (
+            KERNEL_PRELUDE
+            + """
+struct Bad {
+  float* y;
+  [[loom::inline]] void operator()() const { if (y < y + 1) y[0] = 2.0f; }
+};
+const loom::kernel::descriptor* good() {
+  return &loom::kernel::kernel_ref<&run<Body>>;
+}
+const loom::kernel::descriptor* bad() {
+  return &loom::kernel::kernel_ref<&run<Bad>>;
+}
+"""
+        )
+        elf, _, _ = self.compile(source, "--loom-drop-failed-kernels")
+        self.assertTrue(self.device_code_objects(elf))
+        self.assertNoStartupCode(elf)
+        # A unit whose only kernel is dropped has no code object at all.
+        elf, _, _ = self.compile(
+            source.replace("&run<Body>", "&run<Bad>"), "--loom-drop-failed-kernels"
+        )
+        self.assertEqual(self.device_code_objects(elf), [])
+        self.assertNoStartupCode(elf)
+        self.assertIsNone(elf.descriptor(BAD_REF)["code_object"])
 
     def assertNoExportedKernelRefs(self, elf):
         """Descriptors are local definitions: none exported, none undefined."""
@@ -754,6 +841,89 @@ extern "C" const loom::kernel::descriptor* entry_{name}() {{
         self.assertEqual(a, [name, "1", sizes[0], "0"])
         self.assertEqual(b, [name, "1", sizes[1], "1"])
         self.assertEqual(output[2], "2 0")
+
+    SHARED_MAIN = CODE_OBJECTS_C + r"""
+struct descriptor {
+  unsigned version, flags;
+  const char* name;
+  unsigned workgroup_size[3], kernarg_size, parameter_count, export_ordinal;
+  const struct code_object* code_object;
+  void (*pack)(void* kernarg, const void* const* parameters);
+};
+typedef const struct descriptor* (*reference)(void);
+const struct descriptor* entry_a(void);
+const struct descriptor* entry_b(void);
+reference via_a(void);
+reference via_b(void);
+static void print(const struct descriptor* d) {
+  printf("%s %u %u %d\n", d->name, d->flags, d->kernarg_size, code_object(d->code_object));
+}
+int main(void) {
+  printf("references %d\n", via_a() == via_b());
+  print(entry_a());
+  print(entry_b());
+  print(via_a()());
+  print(via_b()());
+  return 0;
+}
+"""
+
+    def test_unavailable_and_available_copies_keep_their_own_descriptors(self):
+        # The same kernel is dropped in one object and compiled in another.
+        # Each object's launches use its own descriptor, whatever the link
+        # order, also through an inline function both objects define (which
+        # loom-cxx makes local rather than leaving one copy to the linker).
+        objects = []
+        for name, body in (
+            ("a", "if (y < y + 1) y[0] = 2.0f;"),  # rejected: dropped
+            ("b", "y[0] = 2.0f;"),
+        ):
+            elf, _, _ = self.compile(
+                KERNEL_PRELUDE
+                + f"""
+struct Shared {{
+  float* y;
+  [[loom::inline]] void operator()() const {{ {body} }}
+}};
+inline const loom::kernel::descriptor* shared_ref() {{
+  return &loom::kernel::kernel_ref<&run<Shared>>;
+}}
+using reference = const loom::kernel::descriptor* (*)();
+const loom::kernel::descriptor* other_{name}() {{
+  return &loom::kernel::kernel_ref<&run<Body>>;
+}}
+extern "C" const loom::kernel::descriptor* entry_{name}() {{
+  return &loom::kernel::kernel_ref<&run<Shared>>;
+}}
+extern "C" reference via_{name}() {{ return &shared_ref; }}
+""",
+                "--loom-drop-failed-kernels",
+                name=name,
+            )
+            objects.append(self.object_path)
+            self.assertNoExportedKernelRefs(elf)
+            self.assertEqual(
+                [
+                    (symbol, binding)
+                    for symbol, (binding, _, _) in elf.symbols().items()
+                    if "shared_ref" in symbol and binding != STB_LOCAL
+                ],
+                [],
+            )
+        shared = "_ZN4loom6kernel10kernel_refIXadL_Z3runI6SharedEvT_EEEE"
+        for path, available in zip(objects, (0, 1)):
+            elf = Elf(path.read_bytes())
+            self.assertEqual(elf.descriptor(shared)["flags"], available)
+        size = str(elf.descriptor(shared)["kernarg_size"])
+        for order in (objects, objects[::-1]):
+            output = self.link_and_run(order, self.SHARED_MAIN)
+            if output is None:
+                self.skipTest("no C compiler to link with")
+            self.assertEqual(output[0].split()[1], "0")  # two shared_ref copies
+            for a, b in ((output[1], output[2]), (output[3], output[4])):
+                a, b = a.split(), b.split()
+                self.assertEqual(a[:4], ["_Z3runI6SharedEvT_", "0", "0", "-1"])
+                self.assertEqual(b, ["_Z3runI6SharedEvT_", "1", size, "0"])
 
     def test_range_for_unit_compiles_in_one_pass(self):
         # The importer translates range-based for statements without changing
