@@ -7,6 +7,7 @@
 #ifndef LOOM_IMPORT_CXX_TRANSLATION_H_
 #define LOOM_IMPORT_CXX_TRANSLATION_H_
 
+#include <unordered_set>
 #include <vector>
 
 #include "loom/import/cxx/source/source.h"
@@ -21,6 +22,7 @@ namespace loom::cxx_import {
 // kernel_ref specialization reached from host code.
 void translate(cxx::TranslationUnit& unit, Diagnostics& diagnostics,
                loom_module_t* module, const loom_cxx_import_options_t& options,
+               const std::unordered_set<cxx::FunctionSymbol*>* excluded = nullptr,
                std::vector<KernelLaunch>* out_kernel_launches = nullptr);
 
 }  // namespace loom::cxx_import
