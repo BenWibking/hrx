@@ -3977,6 +3977,22 @@ class Translator final : private Initialization::Evaluation {
                             evaluate);
   }
 
+  // Whether project_call_target can name each value component of `target`
+  // without reading the whole object.
+  static bool call_target_projects(const Lvalue& target) {
+    if (const auto* selected = target.selection()) {
+      for (const auto& alternative : selected->alternatives) {
+        if (!call_target_projects(alternative)) {
+          return false;
+        }
+      }
+      return true;
+    }
+    const auto* object = std::get_if<ObjectLvalue>(&target.projection);
+    return !object || std::holds_alternative<Destination>(object->location) ||
+           std::holds_alternative<CurrentReceiver>(object->location);
+  }
+
   Lvalue project_call_target(const Lvalue& target, const ValueProjection& group,
                              cxx::AST* owner) {
     if (const auto* selected = target.selection()) {
@@ -4051,11 +4067,19 @@ class Translator final : private Initialization::Evaluation {
                             cxx::AST* owner) {
     const size_t argument_offset = receiver_argument_count + arguments.size();
     if (argument.projection) {
+      // A referent in addressed storage has no per-component lvalue; read it
+      // once and project the value like a source value.
+      std::optional<Value> stored;
+      if (!argument.value && !call_target_projects(*argument.target)) {
+        stored = read(*argument.target, owner);
+      }
       for (const auto& group : argument.projection->inputs) {
+        const Value* source = argument.value ? &*argument.value
+                              : stored       ? &*stored
+                                             : nullptr;
         auto input =
-            argument.value
-                ? argument.value->project(*group.partition,
-                                          group.component_offset)
+            source
+                ? source->project(*group.partition, group.component_offset)
                 : read(project_call_target(*argument.target, group, owner),
                        owner);
         input.append_to(arguments);
