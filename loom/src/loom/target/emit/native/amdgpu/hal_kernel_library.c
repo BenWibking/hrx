@@ -564,6 +564,8 @@ static iree_status_t loom_amdgpu_hal_kernel_library_project_manifest_interface(
   for (iree_host_size_t i = 0; i < layout.resource_count; ++i) {
     const loom_amdgpu_hal_kernarg_resource_t* resource = &layout.resources[i];
     IREE_ASSERT_LT(resource->parameter_index, layout.parameter_count);
+    // A trimmed parameter keeps its index-only row: no storage to report.
+    if (resource->trimmed) continue;
     parameters[resource->parameter_index] =
         (loom_target_artifact_manifest_parameter_t){
             .name = resource->name,
@@ -579,6 +581,7 @@ static iree_status_t loom_amdgpu_hal_kernel_library_project_manifest_interface(
     const loom_amdgpu_hal_kernarg_direct_arg_t* direct_arg =
         &layout.direct_args[i];
     IREE_ASSERT_LT(direct_arg->parameter_index, layout.parameter_count);
+    if (direct_arg->trimmed) continue;
     parameters[direct_arg->parameter_index] =
         (loom_target_artifact_manifest_parameter_t){
             .name = direct_arg->name,
