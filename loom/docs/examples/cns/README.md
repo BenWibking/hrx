@@ -14,7 +14,7 @@ maintenance between dependent dispatches.
 
 ## Files
 
-- `cns.cxx`: 15 Loom C++ kernels, ported line by line from CNS's
+- `cns.cxx`: 20 Loom C++ kernels. Fifteen are ported line by line from CNS's
   `CNS_K.H`, `hydro/CNS_hydro_K.H` and the Sod `cns_prob.H`:
   - initial data and temperature;
   - the ghost-cell fill: neighbor boxes, periodic in y and z,
@@ -22,6 +22,9 @@ maintenance between dependent dispatches.
   - per box, `ctoprim`, the slope and Riemann kernels for each direction,
     and `flux_to_dudt`;
   - the two RK2 updates, and the time-step and totals reductions.
+
+  The other five port the device code of AMReX's `AmrLevel::FillPatch`, used
+  with `--fillpatch=amrex`.
 - `cns_loom.cpp`: the host driver. It loads the code object, allocates the
   state, and runs AMReX's RK2 step with one `hrx_stream_dispatch` per box per
   kernel.
@@ -50,7 +53,9 @@ clang++ -std=c++20 -O2 -I libhrx/include loom/docs/examples/cns/cns_loom.cpp \
 ## Run
 
 ```shell
-cns_loom cns.hsaco [--n=64] [--bs=32] [--steps=20] [--streams=1] [--host-sync] [--graph]
+cns_loom cns.hsaco [--n=64] [--bs=32] [--steps=20] [--streams=1]
+         [--host-sync | --host-sync=flush] [--immediate] [--graph]
+         [--fillpatch=amrex] [--phase-times]
 ```
 
 - `--n`: cells per side of the cubic domain [0, 1]³.
@@ -69,6 +74,18 @@ cns_loom cns.hsaco [--n=64] [--bs=32] [--steps=20] [--streams=1] [--host-sync] [
   step and the totals are still computed with stream launches. The RK
   kernels read the time step from device memory, so a recorded step can be
   replayed with a new time step.
+- `--host-sync=flush`: as `--host-sync`, but submit every stream before
+  waiting on any, as AMReX's LOOM runtime does at each completion point.
+  `--host-sync` submits and waits for one stream at a time, which serializes
+  the streams.
+- `--immediate`: submit each launch as its own `hrx_queue_dispatch` on the
+  stream's queue, chained on the stream's timeline with no barriers, as AMReX's
+  LOOM runtime does by default. Before the host waits, each stream gets an
+  empty recording whose system-scope release publishes the kernels' writes.
+- `--fillpatch=amrex`: fill ghost cells with AMReX's single-level FillPatch
+  instead of one in-place kernel per box (below).
+- `--phase-times`: with `--host-sync`, print the wall time of each phase,
+  summed over all steps.
 
 A phase is one group of launches over all boxes that must finish before the
 next group starts: the ghost-cell fill, the per-box flux chains, an RK
@@ -80,6 +97,35 @@ advance, the totals and the next time step, and `[CNS] Total ...` prints the
 conserved totals. With the defaults (AMReX's `inputs-ci`: 64³ cells in 32³
 boxes, 20 steps), the driver compares the totals after step 20 with the CPU
 reference of AMReX's test and prints `PASS` within a relative error of 1e-12.
+
+## AMReX FillPatch
+
+`--fillpatch=amrex` reproduces what `AmrLevel::FillPatch` runs for one level
+on AMReX's LOOM backend, with the same launches, launch sizes, transfers and
+host synchronizations:
+
+1. A temporary MultiFab with two ghost cells.
+2. `FabArray::setDomainBndry(NaN)` in an `MFIter` loop: one `setComplement`
+   kernel per box at the non-periodic x boundary, over its grown box.
+3. `FillPatchSingleLevel`'s periodic `ParallelCopy` from the state: the copy
+   tags are copied from pinned memory, then one fused kernel gives each tag
+   whole 64-lane warps, and the stream is synchronized when the tag vector is
+   released.
+4. `StateDataPhysBCFunct` in an `MFIter` loop. Each box at the x boundary
+   copies its boundary conditions from pinned memory and launches one
+   `ccfcdoit` face kernel with `FilccCell`. A box that also touches a periodic
+   face repairs its corners through a temporary slab: a copy in, a boundary
+   fill and a copy out.
+5. `MultiFab::Copy` back into the state. The source's `Array4` table is copied
+   from pinned memory and its LOOM offset table synchronously from pageable
+   memory, then one fused kernel runs over all boxes, followed by a stream
+   synchronization.
+
+An `MFIter` loop synchronizes the current stream before it starts and each
+stream it used at the end, one at a time. Arena allocations become
+preallocated slots that are reused only after a host synchronization. Over a
+20-step run with 32³ boxes, the five kernels have the same dispatch and
+workgroup counts as AMReX LOOM's. The totals match the in-place fill exactly.
 
 ## Results
 
@@ -112,6 +158,25 @@ fastest mode.
 
 The 64³ totals pass the reference check in every configuration (relative error
 8e-15 for mass, 5e-15 for energy), with identical totals in every mode.
+
+### Against AMReX LOOM CNS
+
+128³ cells, steps 2–20, median of three rounds on one MI250X GCD (Setonix job
+53193338). The example runs with the libhrx and Loom compiler of the AMReX LOOM
+kit (HRX `459be5f93c`), with `--immediate --host-sync=flush`. AMReX LOOM CNS
+uses its default immediate submission.
+
+| Configuration | 32³ boxes, 4 streams | 64³ boxes, 4 streams | 32³ boxes, 1 stream | 64³ boxes, 1 stream |
+|---|---|---|---|---|
+| This example, in-place fill | 0.194 s | 0.158 s | 0.288 s | 0.174 s |
+| This example, `--fillpatch=amrex` | 0.280 s | 0.204 s | 0.414 s | 0.245 s |
+| AMReX LOOM CNS | 0.286 s | 0.216 s | 0.501 s | 0.264 s |
+
+The ghost fill alone accounts for nearly all of the difference between the
+example and AMReX LOOM CNS on four streams: with AMReX's FillPatch the fill
+phase takes 0.110 s over 20 steps instead of 0.019 s, and the example comes
+within 2% (32³ boxes) and 6% (64³ boxes) of AMReX LOOM. On one stream,
+AMReX's generated `compute_dSdt` kernels also run slower than this example's.
 
 ## Notes
 

@@ -10,7 +10,8 @@
 // streams.
 //
 // Usage: cns_loom <cns.hsaco> [--n=64] [--bs=32] [--steps=20] [--streams=1]
-//                 [--host-sync] [--graph]
+//                 [--host-sync | --host-sync=flush] [--immediate] [--graph]
+//                 [--fillpatch=amrex] [--phase-times]
 //
 // Phases of the step are ordered across streams with device-side event waits;
 // the host waits only to read the time step and the totals. --host-sync
@@ -32,6 +33,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -124,7 +127,11 @@ struct Options {
   int steps = 20;
   int streams = 1;
   bool host_sync = false;
+  bool flush_first = false;  // --host-sync=flush: submit every stream, then wait
+  bool immediate = false;    // --immediate: AMReX LOOM's per-launch queue dispatch
   bool graph = false;
+  bool phase_times = false;
+  bool fillpatch_amrex = false;  // --fillpatch=amrex: AMReX's FillPatch
 };
 
 class Cns {
@@ -142,6 +149,7 @@ class Cns {
     open_device();
     load_kernels();
     allocate();
+    if (options_.fillpatch_amrex) fp_setup();
     if (options_.graph) build_graphs();
   }
 
@@ -149,6 +157,10 @@ class Cns {
     for (hrx_graph_exec_t exec : execs_) hrx_graph_exec_release(exec);
     for (hrx_graph_t graph : graphs_) hrx_graph_release(graph);
     for (hrx_event_t event : events_) hrx_event_release(event);
+    for (const Pinned& p : pinned_) {
+      hrx_status_ignore(hrx_buffer_unmap(p.buffer));
+      hrx_buffer_release(p.buffer);
+    }
     for (hrx_buffer_t buffer : buffers_) hrx_buffer_release(buffer);
     for (hrx_stream_t stream : streams_) hrx_stream_release(stream);
     hrx_executable_release(executable_);
@@ -167,9 +179,13 @@ class Cns {
       std::printf("\n[Level 0 step %d] ADVANCE at time %.10g with dt = %.10g\n",
                   step, time, dt);
       const auto start = std::chrono::steady_clock::now();
+      phase_start_ = start;
+      timing_ = true;
       advance(dt);
       totals = compute_totals();
+      phase_done("totals");
       const double next = estimate_dt();
+      phase_done("estimate_dt");
       const double seconds =
           std::chrono::duration<double>(std::chrono::steady_clock::now() -
                                         start)
@@ -180,6 +196,10 @@ class Cns {
       time += dt;
       dt = std::min(next, kChangeMax * dt);
       if (time + dt > kStopTime - 0.001 * dt) dt = kStopTime - time;
+    }
+    for (const auto& [name, entry] : phase_times_) {
+      std::printf("phase %-14s %5d calls %10.6f s %9.3f us/call\n", name.c_str(),
+                  entry.first, entry.second, 1e6 * entry.second / entry.first);
     }
     std::printf("\nsteps 2-%d: %.6f s total, %.3f ms per step\n",
                 options_.steps, steps_2_on,
@@ -256,6 +276,15 @@ class Cns {
                 options_.graph       ? "one graph per time step"
                 : options_.host_sync ? "host synchronization between phases"
                                      : "device-side ordering between phases");
+    if (options_.graph && options_.immediate) {
+      std::fprintf(stderr, "cns_loom: --graph and --immediate are exclusive\n");
+      std::exit(2);
+    }
+    if (options_.immediate) std::printf("immediate queue dispatches\n");
+    if (options_.graph && options_.fillpatch_amrex) {
+      std::fprintf(stderr, "cns_loom: --graph and --fillpatch=amrex are exclusive\n");
+      std::exit(2);
+    }
   }
 
   void load_kernels() {
@@ -265,7 +294,8 @@ class Cns {
     for (Kernel* kernel :
          {&init_, &temp_, &fill_, &ctoprim_, &slope_[0], &slope_[1],
           &slope_[2], &riemann_[0], &riemann_[1], &riemann_[2], &dudt_,
-          &rk1_, &rk2_, &estdt_, &sums_}) {
+          &rk1_, &rk2_, &estdt_, &sums_, &fp_setc_, &fp_tag_, &fp_bc_,
+          &fp_slab_, &fp_mfcopy_}) {
       check(hrx_executable_lookup_export_by_name(executable_, kernel->name,
                                                  &kernel->ordinal),
             kernel->name);
@@ -344,6 +374,33 @@ class Cns {
     }
     const hrx_dispatch_config_t config = {
         {(elements + 255) / 256, 1, 1}, {256, 1, 1}, 0};
+    if (options_.immediate) {
+      // As AMReX LOOM's dispatch_immediate: flush recorded work, then one
+      // hrx_queue_dispatch chained on the stream's timeline, no barriers.
+      check(hrx_stream_flush(stream), "hrx_stream_flush");
+      hrx_timeline_point_t after{};
+      check(hrx_stream_get_timeline_position(stream, &after),
+            "hrx_stream_get_timeline_position");
+      hrx_semaphore_t timeline = nullptr;
+      check(hrx_stream_get_semaphore(stream, &timeline), "hrx_stream_get_semaphore");
+      uint64_t done = 0;
+      check(hrx_stream_advance_timeline(stream, &done), "hrx_stream_advance_timeline");
+      hrx_semaphore_t wait_semaphore = after.semaphore;
+      uint64_t wait_value = after.value;
+      const hrx_semaphore_list_t waits{&wait_semaphore, &wait_value,
+                                       after.value ? 1u : 0u};
+      const hrx_semaphore_list_t signals{&timeline, &done, 1};
+      static const hrx_barrier_list_t no_barriers{0, nullptr};
+      static const hrx_queue_barriers_t barriers{&no_barriers, &no_barriers};
+      unreleased_[stream] = true;
+      check(hrx_queue_dispatch(hrx_stream_get_queue(stream), &waits, &signals,
+                               executable_, kernel.ordinal, &config,
+                               constants.data(), constants.size(),
+                               bindings.begin(), bindings.size(), &barriers,
+                               HRX_DISPATCH_FLAG_NONE),
+            kernel.name);
+      return;
+    }
     check(hrx_stream_dispatch(stream, executable_, kernel.ordinal, &config,
                               constants.data(), constants.size(),
                               bindings.begin(), bindings.size(),
@@ -353,7 +410,20 @@ class Cns {
 
   hrx_stream_t stream_for(int box) { return streams_[box % streams_.size()]; }
 
+  // As AMReX LOOM's flush_all: an empty recording after immediate dispatches
+  // (system-scope release), then submit every stream before waiting on any.
+  void flush_all() {
+    for (auto& [stream, pending] : unreleased_) {
+      if (pending) check(hrx_stream_barrier(stream, nullptr), "hrx_stream_barrier");
+    }
+    unreleased_.clear();
+    for (hrx_stream_t stream : streams_) {
+      check(hrx_stream_flush(stream), "hrx_stream_flush");
+    }
+  }
+
   void synchronize() {
+    if (options_.flush_first || options_.immediate) flush_all();
     for (hrx_stream_t stream : streams_) {
       check(hrx_stream_synchronize(stream, HRX_WAIT_FLAG_NONE), "hrx_stream_synchronize");
     }
@@ -362,9 +432,10 @@ class Cns {
   // Orders the next phase after all work of this phase on every stream. AMReX
   // synchronizes the host at the end of each MFIter loop; device-side waits
   // give the same ordering without returning to the host.
-  void phase_barrier() {
+  void phase_barrier(const char* name = "other") {
     if (options_.host_sync) {
       synchronize();
+      phase_done(name);
       return;
     }
     if (streams_.size() == 1) return;
@@ -405,7 +476,7 @@ class Cns {
       dispatch(stream_for(b), temp_, cells, Constants() << cells << bs_ << kCv,
                {box_ref(state, state_box_, b)});
     }
-    phase_barrier();
+    phase_barrier("computeTemp");
   }
 
   // FillPatch: neighbor boxes, periodic y/z, foextrap x.
@@ -416,7 +487,7 @@ class Cns {
                Constants() << cells << bs_ << boxes_per_side_ << b,
                {whole_ref(state, state_box_ * boxes_)});
     }
-    phase_barrier();
+    phase_barrier("fill_ghosts");
   }
 
   // CNS::compute_dSdt: the per-box kernel chain.
@@ -450,7 +521,7 @@ class Cns {
                 box_ref(flux_[2], flux_box_, b),
                 box_ref(dsdt_, dsdt_box_, b)});
     }
-    phase_barrier();
+    phase_barrier("compute_dSdt");
   }
 
   void rk_update(const Kernel& kernel) {
@@ -460,7 +531,7 @@ class Cns {
              {whole_ref(time_step_, 1), whole_ref(old_, state_box_ * boxes_),
               whole_ref(dsdt_, dsdt_box_ * boxes_),
               whole_ref(new_, state_box_ * boxes_)});
-    phase_barrier();
+    phase_barrier("rk_update");
   }
 
   // CNS::advance with RungeKutta::RK2.
@@ -474,15 +545,433 @@ class Cns {
             "hrx_graph_exec_launch");
       return;
     }
-    fill_ghosts(old_);
+    fill_patch(old_);
     compute_dsdt(old_);
     rk_update(rk1_);
     compute_temp(new_);
-    fill_ghosts(new_);
+    fill_patch(new_);
     compute_dsdt(new_);
     rk_update(rk2_);
     compute_temp(new_);
   }
+
+
+  //===--------------------------------------------------------------------===//
+  // AMReX FillPatch (--fillpatch=amrex)
+  //
+  // AmrLevel::FillPatch for one level, as AMReX runs it on LOOM: a temporary
+  // MultiFab with two ghost cells; FabArray::setDomainBndry(NaN) in an MFIter
+  // loop; FillPatchSingleLevel's periodic ParallelCopy from the state (a tag
+  // table copied from pinned memory, one fused kernel, a stream sync when the
+  // TagVector goes away); StateDataPhysBCFunct in an MFIter loop (per
+  // boundary box: a BCRec array copied from pinned memory and one face kernel,
+  // and the periodic corner fix-up through a temporary slab); then
+  // MultiFab::Copy back into the state (the source's Array4 table copied from
+  // pinned memory, its LOOM offset table copied synchronously from pageable
+  // memory, one fused kernel, a stream sync). Arena allocations become
+  // preallocated slots, reused only after a host synchronization, as AMReX's
+  // CArena reuses memory.
+  //===--------------------------------------------------------------------===//
+
+  struct Box3 {
+    int lo[3], hi[3];
+    bool ok() const { return lo[0] <= hi[0] && lo[1] <= hi[1] && lo[2] <= hi[2]; }
+    int len(int d) const { return hi[d] - lo[d] + 1; }
+    long npts() const { return ok() ? long(len(0)) * len(1) * len(2) : 0; }
+    bool contains(const Box3& b) const {
+      for (int d = 0; d < 3; ++d) {
+        if (b.lo[d] < lo[d] || b.hi[d] > hi[d]) return false;
+      }
+      return true;
+    }
+    Box3 operator&(const Box3& b) const {
+      Box3 r;
+      for (int d = 0; d < 3; ++d) {
+        r.lo[d] = std::max(lo[d], b.lo[d]);
+        r.hi[d] = std::min(hi[d], b.hi[d]);
+      }
+      return r;
+    }
+    Box3 shifted(int d, int by) const {
+      Box3 r = *this;
+      r.lo[d] += by;
+      r.hi[d] += by;
+      return r;
+    }
+    Box3 grown(int g) const {
+      Box3 r = *this;
+      for (int d = 0; d < 3; ++d) {
+        r.lo[d] -= g;
+        r.hi[d] += g;
+      }
+      return r;
+    }
+  };
+
+  // A fab: a buffer range holding a box of cells, all NCONS components.
+  struct Fab {
+    hrx_buffer_t buffer;
+    size_t offset;  // bytes
+    Box3 box;
+    hrx_buffer_ref_t ref() const {
+      return {buffer, offset, size_t(box.npts()) * kNcons * sizeof(double)};
+    }
+  };
+
+  struct Pinned {
+    hrx_buffer_t buffer = nullptr;
+    uint8_t* host = nullptr;
+  };
+
+  static constexpr int kTagInts = 24, kEntInts = 14, kBoxInts = 8;
+  static constexpr int kWarp = 64, kBlock = 256;
+  static constexpr int kBcrInts = 6 * kNcons;
+  static constexpr int kArray4Bytes = 64;  // sizeof(amrex::Array4<double>)
+
+  bool periodic(int d) const { return d != 0; }  // CNS Sod: periodic in y, z
+  Box3 domain() const { return {{0, 0, 0}, {options_.n - 1, options_.n - 1, options_.n - 1}}; }
+  Box3 valid_box(int b) const {
+    const int x = b % boxes_per_side_, y = (b / boxes_per_side_) % boxes_per_side_;
+    const int z = b / (boxes_per_side_ * boxes_per_side_);
+    return {{x * bs_, y * bs_, z * bs_},
+            {x * bs_ + bs_ - 1, y * bs_ + bs_ - 1, z * bs_ + bs_ - 1}};
+  }
+  Fab state_fab(hrx_buffer_t buffer, int b) const {
+    return {buffer, b * state_box_ * sizeof(double), valid_box(b).grown(2)};
+  }
+
+  hrx_buffer_t allocate_bytes(size_t bytes) {
+    hrx_buffer_t buffer = nullptr;
+    check(hrx_buffer_allocate(streams_[0], bytes, HRX_MEMORY_TYPE_DEVICE_LOCAL,
+                              HRX_BUFFER_USAGE_DEFAULT, &buffer),
+          "hrx_buffer_allocate");
+    buffers_.push_back(buffer);
+    return buffer;
+  }
+
+  // The_Pinned_Arena: host memory the device can read, mapped at one address.
+  Pinned allocate_pinned(size_t bytes) {
+    Pinned p;
+    check(hrx_buffer_allocate(streams_[0], bytes,
+                              HRX_MEMORY_TYPE_HOST_LOCAL | HRX_MEMORY_TYPE_DEVICE_VISIBLE,
+                              HRX_BUFFER_USAGE_DEFAULT, &p.buffer),
+          "hrx_buffer_allocate (pinned)");
+    check(hrx_stream_synchronize(streams_[0], HRX_WAIT_FLAG_NONE), "hrx_stream_synchronize");
+    void* host = nullptr;
+    check(hrx_buffer_map(p.buffer, HRX_MAP_READ | HRX_MAP_WRITE | HRX_MAP_MAY_ALIAS,
+                         0, bytes, &host),
+          "hrx_buffer_map");
+    p.host = static_cast<uint8_t*>(host);
+    pinned_.push_back(p);
+    return p;
+  }
+
+  // amrex_loom::stream_synchronize: submit every stream, then wait for one.
+  void amrex_sync(hrx_stream_t stream) {
+    flush_all();
+    check(hrx_stream_synchronize(stream, HRX_WAIT_FLAG_NONE), "hrx_stream_synchronize");
+  }
+  // MFIter: with several streams, sync the current stream before the loop;
+  // Finalize syncs each stream the loop used, one at a time.
+  void mfiter_begin() {
+    if (streams_.size() > 1 && boxes_ > 1) amrex_sync(streams_[0]);
+  }
+  void mfiter_end() {
+    const int used = std::min<int>(boxes_, static_cast<int>(streams_.size()));
+    for (int s = 0; s < used; ++s) amrex_sync(streams_[s]);
+  }
+  // amrex_loom::memcpy_async from pinned host memory.
+  void copy_h2d(hrx_stream_t stream, const void* host, hrx_buffer_t dst,
+                size_t offset, size_t bytes) {
+    check(hrx_stream_copy_h2d_linear(stream, host, dst, offset, bytes), "hrx_stream_copy_h2d_linear");
+  }
+
+  void fp_setup() {
+    const int sn = bs_ + 4;
+    fabs_ = allocate_bytes(state_box_ * boxes_ * sizeof(double));
+    // FabArrayBase::CPC for ParallelCopy(state -> fabs, 0 -> 2 ghosts,
+    // periodic): for each destination box, each periodic shift, each source box.
+    std::vector<int> shifts[3];
+    for (int d = 0; d < 3; ++d) {
+      shifts[d] = periodic(d) ? std::vector<int>{-options_.n, 0, options_.n}
+                              : std::vector<int>{0};
+    }
+    std::vector<int> nwarps;
+    for (int db = 0; db < boxes_; ++db) {
+      const Box3 g = valid_box(db).grown(2);
+      for (int sz : shifts[2]) for (int sy : shifts[1]) for (int sx : shifts[0]) {
+        const int sh[3] = {sx, sy, sz};
+        for (int sb = 0; sb < boxes_; ++sb) {
+          Box3 src = valid_box(sb);
+          for (int d = 0; d < 3; ++d) src = src.shifted(d, -sh[d]);
+          const Box3 region = g & src;
+          if (!region.ok()) continue;
+          const Box3 dg = g, sg = valid_box(sb).grown(2);
+          const int tag[kTagInts] = {
+              int(db * state_box_), dg.lo[0], dg.lo[1], dg.lo[2], sn, sn, sn,
+              int(sb * state_box_), sg.lo[0], sg.lo[1], sg.lo[2], sn, sn, sn,
+              region.lo[0], region.lo[1], region.lo[2],
+              region.hi[0], region.hi[1], region.hi[2], sh[0], sh[1], sh[2], 0};
+          fp_tags_.insert(fp_tags_.end(), tag, tag + kTagInts);
+          nwarps.push_back(fp_ntotwarps_);
+          fp_ntotwarps_ += int((region.npts() + kWarp - 1) / kWarp);
+          ++fp_ntags_;
+        }
+      }
+    }
+    nwarps.push_back(fp_ntotwarps_);
+    fp_tag_bytes_ = fp_tags_.size() * sizeof(int);
+    fp_nwarps_offset_ = (fp_tag_bytes_ + 15) / 16 * 16;  // Arena::align
+    fp_tag_buffer_bytes_ = fp_nwarps_offset_ + nwarps.size() * sizeof(int);
+    fp_tag_staging_.assign(fp_tag_buffer_bytes_, 0);
+    std::memcpy(fp_tag_staging_.data(), fp_tags_.data(), fp_tag_bytes_);
+    std::memcpy(fp_tag_staging_.data() + fp_nwarps_offset_, nwarps.data(),
+                nwarps.size() * sizeof(int));
+    fp_tags_dev_ = allocate_bytes(fp_tag_buffer_bytes_);
+    fp_tags_pin_ = allocate_pinned(fp_tag_buffer_bytes_);
+    // BCRec arrays: one slot per StateData::FillBoundary call of a FillPatch,
+    // at most one per box plus one per corner fix-up slab.
+    fp_bcr_slots_ = 5 * boxes_;
+    fp_bcr_dev_ = allocate_bytes(fp_bcr_slots_ * kBcrInts * sizeof(int));
+    fp_bcr_pin_ = allocate_pinned(fp_bcr_slots_ * kBcrInts * sizeof(int));
+    // Corner fix-up slabs: up to four per box, at most 2 x (bs+4)^2 cells.
+    fp_slab_slots_ = 4 * boxes_;
+    fp_slab_bytes_ = size_t(2) * sn * sn * kNcons * sizeof(double);
+    fp_slab_tmp_ = allocate_bytes(fp_slab_slots_ * fp_slab_bytes_);
+    // MultiFab ParallelFor: BoxIndexers of the state's grown boxes, and the
+    // state's MultiArray4 entries; AMReX builds both once and caches them.
+    std::vector<int> boxes, entries;
+    for (int b = 0; b < boxes_; ++b) {
+      const Box3 g = valid_box(b).grown(2);
+      const int box[kBoxInts] = {g.lo[0], g.lo[1], g.lo[2], sn, sn, sn,
+                                 int(g.npts()), 0};
+      boxes.insert(boxes.end(), box, box + kBoxInts);
+    }
+    for (int half = 0; half < 2; ++half) {
+      for (int b = 0; b < boxes_; ++b) {
+        const Box3 g = valid_box(b).grown(2);
+        const int e[kEntInts] = {int(b * state_box_), sn, sn * sn, sn * sn * sn,
+                                 g.lo[0], g.lo[1], g.lo[2],
+                                 g.hi[0] + 1, g.hi[1] + 1, g.hi[2] + 1, 0, 0, 0, 0};
+        entries.insert(entries.end(), e, e + kEntInts);
+      }
+    }
+    fp_entries_ = entries;  // the temporary fabs have the same layout
+    fp_boxes_dev_ = allocate_bytes(boxes.size() * sizeof(int));
+    fp_dst_ent_dev_ = allocate_bytes(entries.size() * sizeof(int));
+    fp_src_ent_dev_ = allocate_bytes(entries.size() * sizeof(int));
+    fp_src_a4_dev_ = allocate_bytes(size_t(2) * boxes_ * kArray4Bytes);
+    fp_src_a4_pin_ = allocate_pinned(size_t(2) * boxes_ * kArray4Bytes);
+    check(hrx_stream_copy_h2d_linear(streams_[0], boxes.data(), fp_boxes_dev_, 0,
+                              boxes.size() * sizeof(int)),
+          "hrx_stream_copy_h2d_linear");
+    check(hrx_stream_copy_h2d_linear(streams_[0], entries.data(), fp_dst_ent_dev_, 0,
+                              entries.size() * sizeof(int)),
+          "hrx_stream_copy_h2d_linear");
+    check(hrx_stream_synchronize(streams_[0], HRX_WAIT_FLAG_NONE), "hrx_stream_synchronize");
+    fp_nblocks_per_box_ = (sn * sn * sn + kBlock - 1) / kBlock;
+    std::printf("fillpatch=amrex: %d copy tags, %d warps, %d blocks per ParallelCopy\n",
+                fp_ntags_, fp_ntotwarps_, (fp_ntotwarps_ + 3) / 4);
+  }
+
+  void fill_patch(hrx_buffer_t state) {
+    if (!options_.fillpatch_amrex) {
+      fill_ghosts(state);
+      return;
+    }
+    fp_bcr_used_ = 0;
+    fp_slab_used_ = 0;
+    const int sn = bs_ + 4;
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+
+    // FabArray::setDomainBndry(NaN, geom).
+    Box3 pdomain = domain();
+    for (int d = 0; d < 3; ++d) {
+      if (periodic(d)) {
+        pdomain.lo[d] -= options_.n;
+        pdomain.hi[d] += options_.n;
+      }
+    }
+    mfiter_begin();
+    for (int b = 0; b < boxes_; ++b) {
+      const Fab fab = state_fab(fabs_, b);
+      if (pdomain.contains(fab.box)) continue;
+      const uint32_t cells = sn * sn * sn;
+      dispatch(stream_for(b), fp_setc_, cells,
+               Constants() << cells << bs_ << boxes_per_side_ << b
+                           << int(periodic(0)) << int(periodic(1))
+                           << int(periodic(2)) << nan,
+               {fab.ref()});
+    }
+    mfiter_end();
+
+    // FillPatchSingleLevel: ParallelCopy from the state, on the current stream.
+    std::memcpy(fp_tags_pin_.host, fp_tag_staging_.data(), fp_tag_buffer_bytes_);
+    copy_h2d(streams_[0], fp_tags_pin_.host, fp_tags_dev_, 0, fp_tag_buffer_bytes_);
+    const uint32_t nblocks = (fp_ntotwarps_ + kBlock / kWarp - 1) / (kBlock / kWarp);
+    dispatch(streams_[0], fp_tag_, nblocks * kBlock,
+             Constants() << nblocks * kBlock << fp_ntotwarps_ << fp_ntags_ << int(kNcons),
+             {hrx_buffer_ref_t{fp_tags_dev_, 0, fp_tag_bytes_},
+              hrx_buffer_ref_t{fp_tags_dev_, fp_nwarps_offset_,
+                               fp_tag_buffer_bytes_ - fp_nwarps_offset_},
+              whole_ref(state, state_box_ * boxes_),
+              whole_ref(fabs_, state_box_ * boxes_)});
+    amrex_sync(streams_[0]);  // ~TagVector
+
+    // StateDataPhysBCFunct.
+    const Box3 dom = domain();
+    mfiter_begin();
+    for (int b = 0; b < boxes_; ++b) {
+      hrx_stream_t stream = stream_for(b);
+      const Fab dest = state_fab(fabs_, b);
+      const Box3& bx = dest.box;
+      bool has_phys_bc = false, is_periodic = false;
+      for (int d = 0; d < 3; ++d) {
+        const bool touch = bx.lo[d] < dom.lo[d] || bx.hi[d] > dom.hi[d];
+        if (periodic(d)) {
+          is_periodic = is_periodic || touch;
+        } else {
+          has_phys_bc = has_phys_bc || touch;
+        }
+      }
+      if (!has_phys_bc) continue;
+      state_fill_boundary(stream, bx, dest);
+      if (!is_periodic) continue;
+      Box3 grown_domain = dom;
+      for (int d = 0; d < 3; ++d) {
+        if (periodic(d)) continue;
+        const int lo = dom.lo[d] - bx.lo[d], hi = bx.hi[d] - dom.hi[d];
+        if (lo > 0) grown_domain.lo[d] -= lo;
+        if (hi > 0) grown_domain.hi[d] += hi;
+      }
+      for (int d = 0; d < 3; ++d) {
+        if (!periodic(d)) continue;
+        for (int side = 0; side < 2; ++side) {
+          // lo_slab: bx shifted up a period; hi_slab: down a period.
+          const int period = options_.n;
+          const Box3 slab = bx.shifted(d, side == 0 ? period : -period) & grown_domain;
+          if (!slab.ok()) continue;
+          const Fab tmp{fp_slab_tmp_, fp_slab_used_++ * fp_slab_bytes_, slab};
+          int shift[3] = {0, 0, 0};
+          shift[d] = side == 0 ? -period : period;
+          slab_copy(stream, slab, shift, tmp, dest, true);
+          state_fill_boundary(stream, slab, tmp);
+          slab_copy(stream, slab, shift, tmp, dest, false);
+        }
+      }
+    }
+    mfiter_end();
+
+    // MultiFab::Copy(state, fabs, 0, 0, NCONS, 2): fabs.const_arrays() first.
+    std::memset(fp_src_a4_pin_.host, 0, size_t(2) * boxes_ * kArray4Bytes);
+    copy_h2d(streams_[0], fp_src_a4_pin_.host, fp_src_a4_dev_, 0,
+             size_t(2) * boxes_ * kArray4Bytes);
+    // Gpu::htod_memcpy of the LOOM entries: pageable, so staged, then a sync.
+    std::vector<int> staged = fp_entries_;
+    copy_h2d(streams_[0], staged.data(), fp_src_ent_dev_, 0, staged.size() * sizeof(int));
+    amrex_sync(streams_[0]);
+    const size_t half = size_t(boxes_) * kEntInts * sizeof(int);
+    const uint32_t elements = uint32_t(boxes_) * fp_nblocks_per_box_ * kBlock;
+    dispatch(streams_[0], fp_mfcopy_, elements,
+             Constants() << elements << fp_nblocks_per_box_ << int(kNcons),
+             {whole_ref_bytes(fp_boxes_dev_, size_t(boxes_) * kBoxInts * sizeof(int)),
+              hrx_buffer_ref_t{fp_src_ent_dev_, half, half},
+              hrx_buffer_ref_t{fp_dst_ent_dev_, 0, half},
+              whole_ref(fabs_, state_box_ * boxes_),
+              whole_ref(state, state_box_ * boxes_)});
+    amrex_sync(streams_[0]);
+    phase_barrier("fill_ghosts");
+  }
+
+  hrx_buffer_ref_t whole_ref_bytes(hrx_buffer_t buffer, size_t bytes) {
+    return {buffer, 0, bytes};
+  }
+
+  // StateData::FillBoundary(bx, dest, ...) -> cns_bcfill ->
+  // GpuBndryFuncFab<CnsFillExtDir>::ccfcdoit with FilccCell.
+  void state_fill_boundary(hrx_stream_t stream, const Box3& bx, const Fab& dest) {
+    const Box3 dom = domain();
+    if (dom.contains(bx)) return;
+    Box3 gdomain = dom;
+    for (int d = 0; d < 3; ++d) {
+      if (periodic(d)) {
+        gdomain.lo[d] -= bx.len(d);
+        gdomain.hi[d] += bx.len(d);
+      }
+    }
+    if (gdomain.contains(bx)) return;
+    // amrex::setBC for each component: outflow -> foextrap in x, interior in
+    // the periodic directions; then AsyncArray<BCRec> from pinned memory.
+    if (fp_bcr_used_ >= fp_bcr_slots_) {
+      std::fprintf(stderr, "cns_loom: out of BCRec slots\n");
+      std::exit(1);
+    }
+    const int slot = fp_bcr_used_++;
+    int* bcr = reinterpret_cast<int*>(fp_bcr_pin_.host) + slot * kBcrInts;
+    for (int c = 0; c < kNcons; ++c) {
+      for (int d = 0; d < 3; ++d) {
+        bcr[6 * c + d] = periodic(d) ? 0 : 2;
+        bcr[6 * c + 3 + d] = periodic(d) ? 0 : 2;
+      }
+    }
+    const size_t slot_bytes = kBcrInts * sizeof(int);
+    copy_h2d(stream, bcr, fp_bcr_dev_, slot * slot_bytes, slot_bytes);
+    // Faces first; edges and corners are empty here, since gdomain is grown
+    // by the box length in the periodic directions.
+    std::vector<Box3> faces;
+    for (int d = 0; d < 3; ++d) {
+      Box3 lo = gdomain, hi = gdomain;
+      lo.hi[d] = gdomain.lo[d] - 1;
+      lo.lo[d] = gdomain.lo[d] - bx.len(d);
+      hi.lo[d] = gdomain.hi[d] + 1;
+      hi.hi[d] = gdomain.hi[d] + bx.len(d);
+      for (const Box3& f : {lo, hi}) {
+        const Box3 face = f & bx;
+        if (face.ok()) faces.push_back(face);
+      }
+    }
+    if (faces.size() != 1) {
+      std::fprintf(stderr, "cns_loom: %zu face boxes; only one is ported\n", faces.size());
+      std::exit(1);
+    }
+    const Box3& f = faces[0];
+    const uint32_t cells = uint32_t(f.npts());
+    dispatch(stream, fp_bc_, cells,
+             Constants() << cells << f.lo[0] << f.lo[1] << f.lo[2] << f.len(0)
+                         << f.len(1) << f.len(2) << dom.lo[0] << dom.lo[1]
+                         << dom.lo[2] << dom.hi[0] << dom.hi[1] << dom.hi[2] << 0
+                         << int(kNcons) << dest.box.lo[0] << dest.box.lo[1]
+                         << dest.box.lo[2] << dest.box.len(0) << dest.box.len(1)
+                         << dest.box.len(2),
+             {hrx_buffer_ref_t{fp_bcr_dev_, slot * slot_bytes, slot_bytes},
+              dest.ref()});
+  }
+
+  void slab_copy(hrx_stream_t stream, const Box3& slab, const int shift[3],
+                 const Fab& tmp, const Fab& dest, bool to_tmp) {
+    const uint32_t cells = uint32_t(slab.npts());
+    dispatch(stream, fp_slab_, cells,
+             Constants() << cells << slab.lo[0] << slab.lo[1] << slab.lo[2]
+                         << slab.len(0) << slab.len(1) << slab.len(2) << shift[0]
+                         << shift[1] << shift[2] << dest.box.lo[0]
+                         << dest.box.lo[1] << dest.box.lo[2] << dest.box.len(0)
+                         << dest.box.len(1) << dest.box.len(2) << int(kNcons)
+                         << int(to_tmp),
+             {tmp.ref(), dest.ref()});
+  }
+
+  hrx_buffer_t fabs_ = nullptr, fp_tags_dev_ = nullptr, fp_bcr_dev_ = nullptr,
+               fp_slab_tmp_ = nullptr, fp_boxes_dev_ = nullptr,
+               fp_dst_ent_dev_ = nullptr, fp_src_ent_dev_ = nullptr,
+               fp_src_a4_dev_ = nullptr;
+  Pinned fp_tags_pin_, fp_bcr_pin_, fp_src_a4_pin_;
+  std::vector<Pinned> pinned_;
+  std::vector<int> fp_tags_, fp_entries_;
+  std::vector<uint8_t> fp_tag_staging_;
+  int fp_ntags_ = 0, fp_ntotwarps_ = 0, fp_nblocks_per_box_ = 0;
+  size_t fp_tag_bytes_ = 0, fp_nwarps_offset_ = 0, fp_tag_buffer_bytes_ = 0;
+  int fp_bcr_slots_ = 0, fp_bcr_used_ = 0, fp_slab_slots_ = 0, fp_slab_used_ = 0;
+  size_t fp_slab_bytes_ = 0;
 
   //===--------------------------------------------------------------------===//
   // Graph mode
@@ -624,6 +1113,7 @@ class Cns {
                               partial_host_.size() * sizeof(double)),
           "hrx_stream_copy_d2h_linear");
     // Stream 0 is ordered after every stream's earlier phases.
+    if (options_.immediate) flush_all();
     check(hrx_stream_synchronize(streams_[0], HRX_WAIT_FLAG_NONE), "hrx_stream_synchronize");
     return kCfl *
            *std::min_element(partial_host_.begin(), partial_host_.end());
@@ -640,6 +1130,7 @@ class Cns {
     check(hrx_stream_copy_d2h_linear(streams_[0], sums_partial_, 0, sums_host_.data(),
                               sums_host_.size() * sizeof(double)),
           "hrx_stream_copy_d2h_linear");
+    if (options_.immediate) flush_all();
     check(hrx_stream_synchronize(streams_[0], HRX_WAIT_FLAG_NONE), "hrx_stream_synchronize");
     std::vector<double> totals(5, 0.0);
     for (int c = 0; c < 5; ++c) {
@@ -688,9 +1179,26 @@ class Cns {
   hrx_device_t device_ = nullptr;
   std::vector<hrx_stream_t> streams_;
   std::vector<hrx_event_t> events_;
+  std::map<hrx_stream_t, bool> unreleased_;
+  // --phase-times (with --host-sync): wall time from the end of the previous
+  // phase to the end of this phase's host synchronization, per phase name.
+  std::map<std::string, std::pair<int, double>> phase_times_;
+  std::chrono::steady_clock::time_point phase_start_;
+  bool timing_ = false;  // set once the time steps begin
+  void phase_done(const char* name) {
+    if (!options_.phase_times || !timing_) return;
+    const auto now = std::chrono::steady_clock::now();
+    auto& entry = phase_times_[name];
+    entry.first += 1;
+    entry.second += std::chrono::duration<double>(now - phase_start_).count();
+    phase_start_ = now;
+  }
   hrx_executable_t executable_ = nullptr;
   Kernel init_{"cns_init"}, temp_{"cns_compute_temp"}, fill_{"cns_fill_ghosts"},
       ctoprim_{"cns_ctoprim"}, dudt_{"cns_flux_to_dudt"},
+      fp_setc_{"cns_fp_set_complement"}, fp_tag_{"cns_fp_tag_copy"},
+      fp_bc_{"cns_fp_bc_face"}, fp_slab_{"cns_fp_slab_copy"},
+      fp_mfcopy_{"cns_fp_mf_copy"},
       rk1_{"cns_rk_update"}, rk2_{"cns_rk2_update_2"}, estdt_{"cns_estdt"},
       sums_{"cns_sums"};
   Kernel slope_[3] = {{"cns_slope_x"}, {"cns_slope_y"}, {"cns_slope_z"}};
@@ -728,6 +1236,15 @@ int main(int argc, char** argv) {
       options.streams = std::max(1, std::atoi(arg + 10));
     } else if (std::strcmp(arg, "--host-sync") == 0) {
       options.host_sync = true;
+    } else if (std::strcmp(arg, "--host-sync=flush") == 0) {
+      options.host_sync = true;
+      options.flush_first = true;
+    } else if (std::strcmp(arg, "--fillpatch=amrex") == 0) {
+      options.fillpatch_amrex = true;
+    } else if (std::strcmp(arg, "--phase-times") == 0) {
+      options.phase_times = true;
+    } else if (std::strcmp(arg, "--immediate") == 0) {
+      options.immediate = true;
     } else if (std::strcmp(arg, "--graph") == 0) {
       options.graph = true;
     } else if (!options.hsaco && arg[0] != '-') {
@@ -740,7 +1257,8 @@ int main(int argc, char** argv) {
   if (!options.hsaco) {
     std::fprintf(stderr,
                  "usage: cns_loom <cns.hsaco> [--n=64] [--bs=32] [--steps=20] "
-                 "[--streams=1] [--host-sync] [--graph]\n");
+                 "[--streams=1] [--host-sync | --host-sync=flush] [--immediate] "
+                 "[--graph] [--fillpatch=amrex] [--phase-times]\n");
     return 2;
   }
   Cns cns(options);
