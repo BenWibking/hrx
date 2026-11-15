@@ -137,6 +137,7 @@ struct Options {
   std::string loom_target;
   std::string loom_format;
   bool drop_failed_kernels = false;
+  bool trim_kernel_arguments = false;
   bool stats = false;
   bool verbose = false;
   std::string keep_directory;
@@ -182,6 +183,9 @@ void print_help() {
       "  --loom-drop-failed-kernels\n"
       "      drop kernels that the importer or the device compiler\n"
       "      rejects and keep the rest; their descriptors stay unavailable\n"
+      "  --loom-trim-kernel-arguments\n"
+      "      give each kernel argument segment only the closure leaves the\n"
+      "      compiled kernel reads (also LOOM_CXX_TRIM_KERNEL_ARGUMENTS=1)\n"
       "  --loom-stats\n"
       "      report parse counts and phase times\n"
       "  --loom-keep=DIR\n"
@@ -300,6 +304,8 @@ Options parse_options(int argc, char** argv) {
       options.loom_format = std::string(arg.substr(14));
     } else if (arg == "--loom-drop-failed-kernels") {
       options.drop_failed_kernels = true;
+    } else if (arg == "--loom-trim-kernel-arguments") {
+      options.trim_kernel_arguments = true;
     } else if (arg == "--loom-stats") {
       options.stats = true;
     } else if (arg == "--loom-verbose") {
@@ -1423,9 +1429,15 @@ void Driver::read_argument_layouts(const loomc_result_t* result) {
             parameter ? parameter->getInteger("byte_offset") : std::nullopt;
         const auto length =
             parameter ? parameter->getInteger("byte_length") : std::nullopt;
-        if (!index || !kind || !offset || !length || *index < 0 ||
-            static_cast<size_t>(*index) >= layout.arguments.size()) {
+        if (!index || !kind || *index < 0 ||
+            static_cast<size_t>(*index) >= layout.arguments.size() ||
+            offset.has_value() != length.has_value()) {
           fail(std::format("malformed argument of '{}'", name->str()));
+        }
+        // A parameter without storage was trimmed: the kernel never reads
+        // it, so it has no place in the argument segment.
+        if (!offset) {
+          continue;
         }
         auto& argument = layout.arguments[static_cast<size_t>(*index)];
         argument.buffer = *kind == "binding";
@@ -1607,9 +1619,13 @@ void Driver::define_kernel_descriptors(llvm::GlobalVariable* code_object) {
         const auto& leaf = launch->leaves[i];
         const auto& argument = layout->arguments[i];
         const bool buffer = leaf.kind == kLeafBuffer;
+        // A trimmed leaf is not packed (--loom-trim-kernel-arguments).
+        if (!argument.present) {
+          continue;
+        }
         // A buffer argument carries the host pointer; a by-value argument
         // carries its payload, the low-address bytes of the host object.
-        if (!argument.present || argument.buffer != buffer ||
+        if (argument.buffer != buffer ||
             argument.length > leaf.size ||
             (buffer && argument.length != leaf.size) ||
             argument.offset + argument.length > layout->segment_size ||
@@ -1836,6 +1852,13 @@ void Driver::emit_object() {
 }
 
 bool Driver::run_device_pass() {
+  // The AMDGPU ABI materialization reads this switch in-process. Only this
+  // driver may set it: its packing functions follow the reported layout.
+  if (options_.trim_kernel_arguments ||
+      (getenv("LOOM_CXX_TRIM_KERNEL_ARGUMENTS") &&
+       std::string_view(getenv("LOOM_CXX_TRIM_KERNEL_ARGUMENTS")) != "0")) {
+    setenv("LOOM_AMDGPU_TRIM_UNUSED_KERNEL_ARGUMENTS", "1", /*overwrite=*/1);
+  }
   if (!options_.keep_directory.empty()) {
     work_directory_ = options_.keep_directory;
     keep_work_directory_ = true;

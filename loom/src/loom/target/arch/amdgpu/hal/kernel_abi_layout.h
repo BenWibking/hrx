@@ -58,6 +58,10 @@ typedef struct loom_amdgpu_hal_kernarg_resource_t {
   loom_type_t source_type;
   // Target-low value type produced by low.resource for this binding.
   loom_type_t abi_type;
+  // True when the binding is unused and has no kernarg storage. Its offset,
+  // size and alignment are then meaningless. Only callers that pack arguments
+  // from the reported layout may see trimmed parameters.
+  bool trimmed;
 } loom_amdgpu_hal_kernarg_resource_t;
 
 typedef struct loom_amdgpu_hal_kernarg_direct_arg_t {
@@ -80,6 +84,9 @@ typedef struct loom_amdgpu_hal_kernarg_direct_arg_t {
   uint32_t kernarg_alignment;
   // Target-low value type produced by materializing this argument.
   loom_type_t abi_type;
+  // True when the argument is unused and has no kernarg storage. Its offset
+  // is then meaningless; its sizes keep the authored ABI shape.
+  bool trimmed;
 } loom_amdgpu_hal_kernarg_direct_arg_t;
 
 typedef struct loom_amdgpu_hal_kernel_abi_layout_t {
