@@ -160,14 +160,21 @@ loom_amdgpu_kernel_record_collect_descriptor_flags(
 static iree_status_t loom_amdgpu_kernel_record_build_metadata_arguments(
     const loom_amdgpu_hal_kernel_abi_layout_t* abi_layout,
     iree_arena_allocator_t* arena, iree_diagnostic_emitter_t emitter,
-    bool* out_accepted, const loom_amdgpu_metadata_argument_t** out_arguments) {
+    bool* out_accepted, const loom_amdgpu_metadata_argument_t** out_arguments,
+    iree_host_size_t* out_argument_count) {
   *out_accepted = false;
   *out_arguments = NULL;
+  *out_argument_count = 0;
   const iree_host_size_t argument_count = abi_layout->parameter_count;
   if (argument_count == 0) {
     *out_accepted = true;
     return iree_ok_status();
   }
+  // Trimmed parameters have no kernarg storage and no metadata argument.
+  bool* present = NULL;
+  IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
+      arena, argument_count, sizeof(*present), (void**)&present));
+  memset(present, 0, argument_count * sizeof(*present));
   loom_amdgpu_metadata_argument_t* arguments = NULL;
   IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
       arena, argument_count, sizeof(*arguments), (void**)&arguments));
@@ -175,6 +182,8 @@ static iree_status_t loom_amdgpu_kernel_record_build_metadata_arguments(
     const loom_amdgpu_hal_kernarg_resource_t* resource =
         &abi_layout->resources[i];
     IREE_ASSERT_LT(resource->parameter_index, argument_count);
+    if (resource->trimmed) continue;
+    present[resource->parameter_index] = true;
     arguments[resource->parameter_index] = (loom_amdgpu_metadata_argument_t){
         .name = resource->name,
         .offset = resource->kernarg_offset,
@@ -194,6 +203,8 @@ static iree_status_t loom_amdgpu_kernel_record_build_metadata_arguments(
           UINT32_MAX);
     }
     IREE_ASSERT_LT(direct_arg->parameter_index, argument_count);
+    if (direct_arg->trimmed) continue;
+    present[direct_arg->parameter_index] = true;
     arguments[direct_arg->parameter_index] = (loom_amdgpu_metadata_argument_t){
         .name = direct_arg->name,
         .offset = direct_arg->kernarg_offset,
@@ -202,7 +213,13 @@ static iree_status_t loom_amdgpu_kernel_record_build_metadata_arguments(
         .kind = LOOM_AMDGPU_METADATA_ARGUMENT_BY_VALUE,
     };
   }
+  // Present arguments in parameter order, which is also kernarg order.
+  iree_host_size_t count = 0;
+  for (iree_host_size_t i = 0; i < argument_count; ++i) {
+    if (present[i]) arguments[count++] = arguments[i];
+  }
   *out_arguments = arguments;
+  *out_argument_count = count;
   *out_accepted = true;
   return iree_ok_status();
 }
@@ -344,9 +361,11 @@ iree_status_t loom_amdgpu_kernel_record_build(
       &descriptor_symbol));
 
   const loom_amdgpu_metadata_argument_t* arguments = NULL;
+  iree_host_size_t argument_count = 0;
   bool arguments_accepted = false;
   IREE_RETURN_IF_ERROR(loom_amdgpu_kernel_record_build_metadata_arguments(
-      abi_layout, scratch_arena, emitter, &arguments_accepted, &arguments));
+      abi_layout, scratch_arena, emitter, &arguments_accepted, &arguments,
+      &argument_count));
   if (!arguments_accepted) {
     return iree_ok_status();
   }
@@ -394,7 +413,7 @@ iree_status_t loom_amdgpu_kernel_record_build(
               .target_extensions =
                   target_facts->properties.kernel_metadata_extensions,
               .arguments = arguments,
-              .argument_count = abi_layout->parameter_count,
+              .argument_count = argument_count,
           },
       .descriptor_flags = descriptor_flags,
       .system_vgpr_workitem_id = system_vgpr_workitem_id,
