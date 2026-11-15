@@ -868,3 +868,155 @@ void cns_fp_mf_copy(unsigned elements, int nblocks_per_box, int ncomp,
             (k - src_entries[se + 6]) * src_entries[se + 2] + n * src_entries[se + 3]];
   }
 }
+
+//===----------------------------------------------------------------------===//
+// AMReX-sized argument lists (--extra-args)
+//
+// The compute_dSdt kernels with extra scalar arguments, so that each argument
+// segment is as large as AMReX LOOM's for the same kernel (176, 168, 232 and
+// 312 bytes). Every extra argument is loaded and folded into a test the host
+// never satisfies (it passes zeros), so the arithmetic is unchanged and only
+// the argument loads and their scalar work are added.
+//===----------------------------------------------------------------------===//
+
+#define XARGS_MAGIC 0x5a5a5a5a
+
+[[loom::kernel(configure)]]
+void cns_ctoprim_xa(unsigned elements, int bs, double gamma, double smallr,
+                    double smallp, double cv, int x0, int x1, int x2, int x3, int x4, int x5, int x6, int x7, int x8, int x9, int x10, int x11, int x12, int x13, int x14, int x15, int x16, int x17, int x18, int x19, int x20, int x21, int x22, int x23, int x24, int x25, int x26, int x27, int x28, int x29,
+                    [[loom::noalias]] const double* u, [[loom::noalias]] double* q) {
+  const unsigned e = element_index();
+  if (e >= elements) return;
+  if ((x0 ^ x1 ^ x2 ^ x3 ^ x4 ^ x5 ^ x6 ^ x7 ^ x8 ^ x9 ^ x10 ^ x11 ^ x12 ^ x13 ^ x14 ^ x15 ^ x16 ^ x17 ^ x18 ^ x19 ^ x20 ^ x21 ^ x22 ^ x23 ^ x24 ^ x25 ^ x26 ^ x27 ^ x28 ^ x29) == XARGS_MAGIC) {
+    q[0] = 0.0;
+    return;
+  }
+  const int n = bs + 4;
+  const int i = e % n, j = (e / n) % n, k = e / (n * n);
+  const double rho = dmax(u[at(i, j, k, URHO, n, n, n)], smallr);
+  const double rhoinv = 1.0 / rho;
+  const double ux = u[at(i, j, k, UMX, n, n, n)] * rhoinv;
+  const double uy = u[at(i, j, k, UMY, n, n, n)] * rhoinv;
+  const double uz = u[at(i, j, k, UMZ, n, n, n)] * rhoinv;
+  const double kineng = 0.5 * rho * (ux * ux + uy * uy + uz * uz);
+  double ei = u[at(i, j, k, UEDEN, n, n, n)] - kineng;
+  if (ei <= 0.0) ei = u[at(i, j, k, UEINT, n, n, n)];
+  const double p = dmax((gamma - 1.0) * ei, smallp);
+  ei *= rhoinv;
+  q[at(i, j, k, QRHO, n, n, n)] = rho;
+  q[at(i, j, k, QU, n, n, n)] = ux;
+  q[at(i, j, k, QV, n, n, n)] = uy;
+  q[at(i, j, k, QW, n, n, n)] = uz;
+  q[at(i, j, k, QEINT, n, n, n)] = ei;
+  q[at(i, j, k, QPRES, n, n, n)] = p;
+  q[at(i, j, k, QCS, n, n, n)] = __builtin_sqrt(gamma * p * rhoinv);
+  q[at(i, j, k, QTEMP, n, n, n)] = ei / cv;
+}
+
+[[loom::kernel(configure)]]
+void cns_slope_x_xa(unsigned elements, int bs, int x0, int x1, int x2, int x3, int x4, int x5, int x6, int x7, int x8, int x9, int x10, int x11, int x12, int x13, int x14, int x15, int x16, int x17, int x18, int x19, int x20, int x21, int x22, int x23, int x24, int x25, int x26, int x27, int x28, int x29, int x30, int x31, int x32, int x33, int x34, int x35,
+                    [[loom::noalias]] const double* q, [[loom::noalias]] double* dq) {
+  const unsigned e = element_index();
+  if (e >= elements) return;
+  if ((x0 ^ x1 ^ x2 ^ x3 ^ x4 ^ x5 ^ x6 ^ x7 ^ x8 ^ x9 ^ x10 ^ x11 ^ x12 ^ x13 ^ x14 ^ x15 ^ x16 ^ x17 ^ x18 ^ x19 ^ x20 ^ x21 ^ x22 ^ x23 ^ x24 ^ x25 ^ x26 ^ x27 ^ x28 ^ x29 ^ x30 ^ x31 ^ x32 ^ x33 ^ x34 ^ x35) == XARGS_MAGIC) {
+    dq[0] = 0.0;
+    return;
+  }
+  cns_slope(0, e, bs, q, dq);
+}
+
+[[loom::kernel(configure)]]
+void cns_slope_y_xa(unsigned elements, int bs, int x0, int x1, int x2, int x3, int x4, int x5, int x6, int x7, int x8, int x9, int x10, int x11, int x12, int x13, int x14, int x15, int x16, int x17, int x18, int x19, int x20, int x21, int x22, int x23, int x24, int x25, int x26, int x27, int x28, int x29, int x30, int x31, int x32, int x33, int x34, int x35,
+                    [[loom::noalias]] const double* q, [[loom::noalias]] double* dq) {
+  const unsigned e = element_index();
+  if (e >= elements) return;
+  if ((x0 ^ x1 ^ x2 ^ x3 ^ x4 ^ x5 ^ x6 ^ x7 ^ x8 ^ x9 ^ x10 ^ x11 ^ x12 ^ x13 ^ x14 ^ x15 ^ x16 ^ x17 ^ x18 ^ x19 ^ x20 ^ x21 ^ x22 ^ x23 ^ x24 ^ x25 ^ x26 ^ x27 ^ x28 ^ x29 ^ x30 ^ x31 ^ x32 ^ x33 ^ x34 ^ x35) == XARGS_MAGIC) {
+    dq[0] = 0.0;
+    return;
+  }
+  cns_slope(1, e, bs, q, dq);
+}
+
+[[loom::kernel(configure)]]
+void cns_slope_z_xa(unsigned elements, int bs, int x0, int x1, int x2, int x3, int x4, int x5, int x6, int x7, int x8, int x9, int x10, int x11, int x12, int x13, int x14, int x15, int x16, int x17, int x18, int x19, int x20, int x21, int x22, int x23, int x24, int x25, int x26, int x27, int x28, int x29, int x30, int x31, int x32, int x33, int x34, int x35,
+                    [[loom::noalias]] const double* q, [[loom::noalias]] double* dq) {
+  const unsigned e = element_index();
+  if (e >= elements) return;
+  if ((x0 ^ x1 ^ x2 ^ x3 ^ x4 ^ x5 ^ x6 ^ x7 ^ x8 ^ x9 ^ x10 ^ x11 ^ x12 ^ x13 ^ x14 ^ x15 ^ x16 ^ x17 ^ x18 ^ x19 ^ x20 ^ x21 ^ x22 ^ x23 ^ x24 ^ x25 ^ x26 ^ x27 ^ x28 ^ x29 ^ x30 ^ x31 ^ x32 ^ x33 ^ x34 ^ x35) == XARGS_MAGIC) {
+    dq[0] = 0.0;
+    return;
+  }
+  cns_slope(2, e, bs, q, dq);
+}
+
+[[loom::kernel(configure)]]
+void cns_riemann_x_xa(unsigned elements, int bs, double gamma, double smallp,
+                      double smallr, int x0, int x1, int x2, int x3, int x4, int x5, int x6, int x7, int x8, int x9, int x10, int x11, int x12, int x13, int x14, int x15, int x16, int x17, int x18, int x19, int x20, int x21, int x22, int x23, int x24, int x25, int x26, int x27, int x28, int x29, int x30, int x31, int x32, int x33, int x34, int x35, int x36, int x37, int x38, int x39, int x40, int x41, int x42, int x43,
+                      [[loom::noalias]] const double* dq,
+                      [[loom::noalias]] const double* q,
+                      [[loom::noalias]] double* f) {
+  const unsigned e = element_index();
+  if (e >= elements) return;
+  if ((x0 ^ x1 ^ x2 ^ x3 ^ x4 ^ x5 ^ x6 ^ x7 ^ x8 ^ x9 ^ x10 ^ x11 ^ x12 ^ x13 ^ x14 ^ x15 ^ x16 ^ x17 ^ x18 ^ x19 ^ x20 ^ x21 ^ x22 ^ x23 ^ x24 ^ x25 ^ x26 ^ x27 ^ x28 ^ x29 ^ x30 ^ x31 ^ x32 ^ x33 ^ x34 ^ x35 ^ x36 ^ x37 ^ x38 ^ x39 ^ x40 ^ x41 ^ x42 ^ x43) == XARGS_MAGIC) {
+    f[0] = 0.0;
+    return;
+  }
+  cns_riemann(0, e, bs, gamma, smallp, smallr, dq, q, f);
+}
+
+[[loom::kernel(configure)]]
+void cns_riemann_y_xa(unsigned elements, int bs, double gamma, double smallp,
+                      double smallr, int x0, int x1, int x2, int x3, int x4, int x5, int x6, int x7, int x8, int x9, int x10, int x11, int x12, int x13, int x14, int x15, int x16, int x17, int x18, int x19, int x20, int x21, int x22, int x23, int x24, int x25, int x26, int x27, int x28, int x29, int x30, int x31, int x32, int x33, int x34, int x35, int x36, int x37, int x38, int x39, int x40, int x41, int x42, int x43,
+                      [[loom::noalias]] const double* dq,
+                      [[loom::noalias]] const double* q,
+                      [[loom::noalias]] double* f) {
+  const unsigned e = element_index();
+  if (e >= elements) return;
+  if ((x0 ^ x1 ^ x2 ^ x3 ^ x4 ^ x5 ^ x6 ^ x7 ^ x8 ^ x9 ^ x10 ^ x11 ^ x12 ^ x13 ^ x14 ^ x15 ^ x16 ^ x17 ^ x18 ^ x19 ^ x20 ^ x21 ^ x22 ^ x23 ^ x24 ^ x25 ^ x26 ^ x27 ^ x28 ^ x29 ^ x30 ^ x31 ^ x32 ^ x33 ^ x34 ^ x35 ^ x36 ^ x37 ^ x38 ^ x39 ^ x40 ^ x41 ^ x42 ^ x43) == XARGS_MAGIC) {
+    f[0] = 0.0;
+    return;
+  }
+  cns_riemann(1, e, bs, gamma, smallp, smallr, dq, q, f);
+}
+
+[[loom::kernel(configure)]]
+void cns_riemann_z_xa(unsigned elements, int bs, double gamma, double smallp,
+                      double smallr, int x0, int x1, int x2, int x3, int x4, int x5, int x6, int x7, int x8, int x9, int x10, int x11, int x12, int x13, int x14, int x15, int x16, int x17, int x18, int x19, int x20, int x21, int x22, int x23, int x24, int x25, int x26, int x27, int x28, int x29, int x30, int x31, int x32, int x33, int x34, int x35, int x36, int x37, int x38, int x39, int x40, int x41, int x42, int x43,
+                      [[loom::noalias]] const double* dq,
+                      [[loom::noalias]] const double* q,
+                      [[loom::noalias]] double* f) {
+  const unsigned e = element_index();
+  if (e >= elements) return;
+  if ((x0 ^ x1 ^ x2 ^ x3 ^ x4 ^ x5 ^ x6 ^ x7 ^ x8 ^ x9 ^ x10 ^ x11 ^ x12 ^ x13 ^ x14 ^ x15 ^ x16 ^ x17 ^ x18 ^ x19 ^ x20 ^ x21 ^ x22 ^ x23 ^ x24 ^ x25 ^ x26 ^ x27 ^ x28 ^ x29 ^ x30 ^ x31 ^ x32 ^ x33 ^ x34 ^ x35 ^ x36 ^ x37 ^ x38 ^ x39 ^ x40 ^ x41 ^ x42 ^ x43) == XARGS_MAGIC) {
+    f[0] = 0.0;
+    return;
+  }
+  cns_riemann(2, e, bs, gamma, smallp, smallr, dq, q, f);
+}
+
+[[loom::kernel(configure)]]
+void cns_flux_to_dudt_xa(unsigned elements, int bs, double dxinv0, double dxinv1,
+                         double dxinv2, int x0, int x1, int x2, int x3, int x4, int x5, int x6, int x7, int x8, int x9, int x10, int x11, int x12, int x13, int x14, int x15, int x16, int x17, int x18, int x19, int x20, int x21, int x22, int x23, int x24, int x25, int x26, int x27, int x28, int x29, int x30, int x31, int x32, int x33, int x34, int x35, int x36, int x37, int x38, int x39, int x40, int x41, int x42, int x43, int x44, int x45, int x46, int x47, int x48, int x49, int x50, int x51, int x52, int x53, int x54, int x55, int x56, int x57, int x58, int x59, int x60, int x61,
+                         [[loom::noalias]] const double* fx,
+                         [[loom::noalias]] const double* fy,
+                         [[loom::noalias]] const double* fz,
+                         [[loom::noalias]] double* dudt) {
+  const unsigned e = element_index();
+  if (e >= elements) return;
+  if ((x0 ^ x1 ^ x2 ^ x3 ^ x4 ^ x5 ^ x6 ^ x7 ^ x8 ^ x9 ^ x10 ^ x11 ^ x12 ^ x13 ^ x14 ^ x15 ^ x16 ^ x17 ^ x18 ^ x19 ^ x20 ^ x21 ^ x22 ^ x23 ^ x24 ^ x25 ^ x26 ^ x27 ^ x28 ^ x29 ^ x30 ^ x31 ^ x32 ^ x33 ^ x34 ^ x35 ^ x36 ^ x37 ^ x38 ^ x39 ^ x40 ^ x41 ^ x42 ^ x43 ^ x44 ^ x45 ^ x46 ^ x47 ^ x48 ^ x49 ^ x50 ^ x51 ^ x52 ^ x53 ^ x54 ^ x55 ^ x56 ^ x57 ^ x58 ^ x59 ^ x60 ^ x61) == XARGS_MAGIC) {
+    dudt[0] = 0.0;
+    return;
+  }
+  const int cells = bs * bs * bs;
+  const int n = e / cells;
+  const int c = e % cells;
+  const int i = c % bs, j = (c / bs) % bs, k = c / (bs * bs);
+  const int b1 = bs + 1;
+  dudt[at(i, j, k, n, bs, bs, bs)] =
+      dxinv0 * (fx[at(i, j, k, n, b1, bs, bs)] -
+                fx[at(i + 1, j, k, n, b1, bs, bs)]) +
+      dxinv1 * (fy[at(i, j, k, n, bs, b1, bs)] -
+                fy[at(i, j + 1, k, n, bs, b1, bs)]) +
+      dxinv2 * (fz[at(i, j, k, n, bs, bs, b1)] -
+                fz[at(i, j, k + 1, n, bs, bs, b1)]);
+}
