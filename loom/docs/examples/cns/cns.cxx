@@ -17,7 +17,8 @@
 //   dSdt:     bs^3 cells x 7 components (no ghost cells)
 // Every array is x-fastest, then y, z, then component (AMReX FArrayBox order).
 // Pointer arguments address one box; the host binds each box's subrange.
-// Only fill_ghosts, rk_update, rk2_update_2 and estdt span all boxes.
+// Only fill_ghosts, rk_update, rk2_update_2, estdt and the FillPatch kernels
+// span all boxes.
 
 #include <loomcxx/kernel.h>
 
@@ -611,5 +612,259 @@ void cns_sums(unsigned elements, int bs, int workgroups,
     partial[2 * workgroups + group] = sum_my;
     partial[3 * workgroups + group] = sum_mz;
     partial[4 * workgroups + group] = sum_eden;
+  }
+}
+
+//===----------------------------------------------------------------------===//
+// AMReX FillPatch (--fillpatch=amrex)
+//
+// Ports of the device code AMReX runs in AmrLevel::FillPatch for a single
+// level: FabArray::setDomainBndry (BaseFab::setComplement), the fused copy of
+// FabArray::ParallelCopy (detail::fab_to_fab over Array4CopyTags),
+// GpuBndryFuncFab::ccfcdoit with FilccCell, the periodic corner fix-up of
+// StateDataPhysBCFunct, and the fused MultiFab ParallelFor of amrex::Copy. The
+// host driver reproduces the launches, transfers and synchronizations around
+// them. A "fab" is a box of cells with its own lower corner and lengths,
+// x-fastest, then y, z, component, like an Array4.
+//===----------------------------------------------------------------------===//
+
+[[loom::inline]] static int fab_at(int i, int j, int k, int n, int lox, int loy,
+                                   int loz, int lx, int ly, int lz) {
+  return ((n * lz + (k - loz)) * ly + (j - loy)) * lx + (i - lox);
+}
+
+// BaseFab::setComplement over the fab of box `box`: every cell of the grown box
+// outside the domain (grown by its length in periodic directions) gets `val`.
+[[loom::kernel(configure)]]
+void cns_fp_set_complement(unsigned elements, int bs, int boxes_per_side,
+                           int box, int periodic_x, int periodic_y,
+                           int periodic_z, double val,
+                           [[loom::noalias]] double* fab) {
+  const unsigned e = element_index();
+  if (e >= elements) return;
+  const int n = bs + 4;
+  const int il = e % n, jl = (e / n) % n, kl = e / (n * n);
+  const int domain = bs * boxes_per_side;
+  const int bx = box % boxes_per_side;
+  const int by = (box / boxes_per_side) % boxes_per_side;
+  const int bz = box / (boxes_per_side * boxes_per_side);
+  const int i = bx * bs - 2 + il, j = by * bs - 2 + jl, k = bz * bs - 2 + kl;
+  const int glox = periodic_x ? -domain : 0, ghix = periodic_x ? 2 * domain - 1 : domain - 1;
+  const int gloy = periodic_y ? -domain : 0, ghiy = periodic_y ? 2 * domain - 1 : domain - 1;
+  const int gloz = periodic_z ? -domain : 0, ghiz = periodic_z ? 2 * domain - 1 : domain - 1;
+  const bool inside = i >= glox && i <= ghix && j >= gloy && j <= ghiy &&
+                      k >= gloz && k <= ghiz;
+  if (!inside) {
+    for (int c = 0; c < NCONS; ++c) fab[at(il, jl, kl, c, n, n, n)] = val;
+  }
+}
+
+// One ParallelCopy tag, as the ints the host copies to the device: the
+// destination and source fabs (element offset, lower corner, lengths), the
+// destination region and the source offset, in global cell indices.
+#define TAG_INTS 24
+#define TAG_DOFF 0
+#define TAG_DLO 1
+#define TAG_DLEN 4
+#define TAG_SOFF 7
+#define TAG_SLO 8
+#define TAG_SLEN 11
+#define TAG_BLO 14
+#define TAG_BHI 17
+#define TAG_OFF 20
+#define WARP 64
+
+// detail::ParallelFor_doit over a TagVector with fab_to_fab's copy: each tag
+// gets whole 64-lane warps, found by bisecting the per-tag warp offsets.
+[[loom::kernel(configure)]]
+void cns_fp_tag_copy(unsigned elements, int ntotwarps, int ntags, int ncomp,
+                     [[loom::noalias]] const int* tags,
+                     [[loom::noalias]] const int* nwarps,
+                     [[loom::noalias]] const double* src,
+                     [[loom::noalias]] double* dst) {
+  const unsigned g_tid = element_index();
+  if (g_tid >= elements) return;
+  const int g_wid = static_cast<int>(g_tid / WARP);
+  if (g_wid >= ntotwarps) return;
+  // amrex::bisect: nwarps[lo] <= g_wid < nwarps[lo+1].
+  int lo = 0, hi = ntags;
+  while (hi - lo > 1) {
+    const int mid = (lo + hi) / 2;
+    if (g_wid < nwarps[mid]) {
+      hi = mid;
+    } else {
+      lo = mid;
+    }
+  }
+  const int tag_id = lo;
+  const int b_wid = g_wid - nwarps[tag_id];
+  const int lane = static_cast<int>(loom::kernel::workitem::id.x) % WARP;
+  const int icell = b_wid * WARP + lane;
+  const int tb = tag_id * TAG_INTS;
+  const int lx = tags[tb + TAG_BHI] - tags[tb + TAG_BLO] + 1;
+  const int ly = tags[tb + TAG_BHI + 1] - tags[tb + TAG_BLO + 1] + 1;
+  const int lz = tags[tb + TAG_BHI + 2] - tags[tb + TAG_BLO + 2] + 1;
+  const int ncells = lx * ly * lz;
+  if (icell < ncells) {
+    const int i = tags[tb + TAG_BLO] + icell % lx;
+    const int j = tags[tb + TAG_BLO + 1] + (icell / lx) % ly;
+    const int k = tags[tb + TAG_BLO + 2] + icell / (lx * ly);
+    for (int c = 0; c < ncomp; ++c) {
+      dst[tags[tb + TAG_DOFF] + fab_at(i, j, k, c, tags[tb + TAG_DLO], tags[tb + TAG_DLO + 1],
+                               tags[tb + TAG_DLO + 2], tags[tb + TAG_DLEN], tags[tb + TAG_DLEN + 1],
+                               tags[tb + TAG_DLEN + 2])] =
+          src[tags[tb + TAG_SOFF] + fab_at(i + tags[tb + TAG_OFF], j + tags[tb + TAG_OFF + 1],
+                                   k + tags[tb + TAG_OFF + 2], c, tags[tb + TAG_SLO],
+                                   tags[tb + TAG_SLO + 1], tags[tb + TAG_SLO + 2], tags[tb + TAG_SLEN],
+                                   tags[tb + TAG_SLEN + 1], tags[tb + TAG_SLEN + 2])];
+    }
+  }
+}
+
+// AMReX BCType values.
+#define BC_REFLECT_ODD -1
+#define BC_REFLECT_EVEN 1
+#define BC_FOEXTRAP 2
+#define BC_HOEXTRAP 4
+#define BC_HOEXTRAPCC 5
+
+// FilccCell for one direction of one component: `d` is the direction, `lo`
+// and `hi` the domain bounds along it, `p` the cell's coordinate along it,
+// `qlo`/`qend` the fab's bounds along it. Returns the cell to read (as an
+// offset along d) and the factor, or leaves the cell alone.
+[[loom::inline]] static void filcc_dir(int d, int i, int j, int k, int n,
+                                       int lo, int hi, int bclo, int bchi,
+                                       int qlo, int qhi, double* q, int flox,
+                                       int floy, int floz, int lx, int ly,
+                                       int lz) {
+  const int p = d == 0 ? i : (d == 1 ? j : k);
+  const int dx = d == 0, dy = d == 1, dz = d == 2;
+#define Q(pp) q[fab_at(i + ((pp) - p) * dx, j + ((pp) - p) * dy, k + ((pp) - p) * dz, n, flox, floy, floz, lx, ly, lz)]
+  if (p < lo) {
+    if (bclo == BC_FOEXTRAP) {
+      Q(p) = Q(lo);
+    } else if (bclo == BC_HOEXTRAP) {
+      if (p < lo - 1) {
+        Q(p) = Q(lo);
+      } else if (lo + 2 <= (qhi < hi ? qhi : hi)) {
+        Q(p) = 0.125 * (15. * Q(p + 1) - 10. * Q(p + 2) + 3. * Q(p + 3));
+      } else {
+        Q(p) = 0.5 * (3. * Q(p + 1) - Q(p + 2));
+      }
+    } else if (bclo == BC_HOEXTRAPCC) {
+      Q(p) = (lo - p) * (Q(lo) - Q(lo + 1)) + Q(lo);
+    } else if (bclo == BC_REFLECT_EVEN) {
+      Q(p) = Q(2 * lo - p - 1);
+    } else if (bclo == BC_REFLECT_ODD) {
+      Q(p) = -Q(2 * lo - p - 1);
+    }
+  } else if (p > hi) {
+    if (bchi == BC_FOEXTRAP) {
+      Q(p) = Q(hi);
+    } else if (bchi == BC_HOEXTRAP) {
+      if (p > hi + 1) {
+        Q(p) = Q(hi);
+      } else if (hi - 2 >= (qlo > lo ? qlo : lo)) {
+        Q(p) = 0.125 * (15. * Q(p - 1) - 10. * Q(p - 2) + 3. * Q(p - 3));
+      } else {
+        Q(p) = 0.5 * (3. * Q(p - 1) - Q(p - 2));
+      }
+    } else if (bchi == BC_HOEXTRAPCC) {
+      Q(p) = (p - hi) * (Q(hi) - Q(hi - 1)) + Q(hi);
+    } else if (bchi == BC_REFLECT_EVEN) {
+      Q(p) = Q(2 * hi - p + 1);
+    } else if (bchi == BC_REFLECT_ODD) {
+      Q(p) = -Q(2 * hi - p + 1);
+    }
+  }
+#undef Q
+}
+
+// GpuBndryFuncFab::ccfcdoit for one face box: FilccCell on each cell of the
+// face box (blox..: lower corner, blx..: lengths) of the fab q, reading the
+// boundary conditions (6 ints per component: lo[3], hi[3]) from device memory.
+// CNS's external Dirichlet functor (CnsFillExtDir) does nothing.
+[[loom::kernel(configure)]]
+void cns_fp_bc_face(unsigned elements, int blox, int bloy, int bloz, int blx,
+                    int bly, int blz, int dlox, int dloy, int dloz, int dhix,
+                    int dhiy, int dhiz, int dcomp, int numcomp, int flox,
+                    int floy, int floz, int flx, int fly, int flz,
+                    [[loom::noalias]] const int* bcr,
+                    [[loom::noalias]] double* q) {
+  const unsigned e = element_index();
+  if (e >= elements) return;
+  const int i = blox + static_cast<int>(e % blx);
+  const int j = bloy + static_cast<int>((e / blx) % bly);
+  const int k = bloz + static_cast<int>(e / (blx * bly));
+  for (int n = dcomp; n < numcomp + dcomp; ++n) {
+    const int bo = 6 * (n - dcomp);
+    filcc_dir(0, i, j, k, n, dlox, dhix, bcr[bo], bcr[bo + 3], flox, flox + flx - 1, q,
+              flox, floy, floz, flx, fly, flz);
+    filcc_dir(1, i, j, k, n, dloy, dhiy, bcr[bo + 1], bcr[bo + 4], floy, floy + fly - 1, q,
+              flox, floy, floz, flx, fly, flz);
+    filcc_dir(2, i, j, k, n, dloz, dhiz, bcr[bo + 2], bcr[bo + 5], floz, floz + flz - 1, q,
+              flox, floy, floz, flx, fly, flz);
+  }
+}
+
+// StateDataPhysBCFunct's periodic corner fix-up copies: with `to_tmp`,
+// tmp(iv,n) = dest(iv+shift,n) over the slab; otherwise the reverse.
+[[loom::kernel(configure)]]
+void cns_fp_slab_copy(unsigned elements, int slox, int sloy, int sloz, int slx,
+                      int sly, int slz, int shx, int shy, int shz, int dlox,
+                      int dloy, int dloz, int dlx, int dly, int dlz, int ncomp,
+                      int to_tmp, [[loom::noalias]] double* tmp,
+                      [[loom::noalias]] double* dest) {
+  const unsigned e = element_index();
+  if (e >= elements) return;
+  const int i = slox + static_cast<int>(e % slx);
+  const int j = sloy + static_cast<int>((e / slx) % sly);
+  const int k = sloz + static_cast<int>(e / (slx * sly));
+  for (int n = 0; n < ncomp; ++n) {
+    const int ti = fab_at(i, j, k, n, slox, sloy, sloz, slx, sly, slz);
+    const int di = fab_at(i + shx, j + shy, k + shz, n, dlox, dloy, dloz, dlx,
+                          dly, dlz);
+    if (to_tmp) {
+      tmp[ti] = dest[di];
+    } else {
+      dest[di] = tmp[ti];
+    }
+  }
+}
+
+// MultiArray4 entries (LOOM: element offset from a base, strides, begin, end)
+// and BoxIndexers, as the ints the host copies to the device.
+#define ENT_INTS 14  // 56 bytes, as a LOOM MultiArray4 entry; the first 10 are used
+#define BOX_INTS 8
+
+// amrex::Copy's fused ParallelFor over a MultiFab: `nblocks_per_box` blocks
+// per box, the box from the block index, the cell from the box's indexer.
+[[loom::kernel(configure)]]
+void cns_fp_mf_copy(unsigned elements, int nblocks_per_box, int ncomp,
+                    [[loom::noalias]] const int* boxes,
+                    [[loom::noalias]] const int* src_entries,
+                    [[loom::noalias]] const int* dst_entries,
+                    [[loom::noalias]] const double* src,
+                    [[loom::noalias]] double* dst) {
+  const unsigned e = element_index();
+  if (e >= elements) return;
+  const int block = static_cast<int>(loom::kernel::workgroup::id.x);
+  const int ibox = block / nblocks_per_box;
+  const int iblock = block % nblocks_per_box;
+  const int icell = iblock * 256 + static_cast<int>(loom::kernel::workitem::id.x);
+  const int bb = ibox * BOX_INTS;
+  if (icell >= boxes[bb + 6]) return;
+  const int i = boxes[bb] + icell % boxes[bb + 3];
+  const int j = boxes[bb + 1] + (icell / boxes[bb + 3]) % boxes[bb + 4];
+  const int k = boxes[bb + 2] + icell / (boxes[bb + 3] * boxes[bb + 4]);
+  const int se = ibox * ENT_INTS;
+  const int de = ibox * ENT_INTS;
+  for (int n = 0; n < ncomp; ++n) {
+    dst[dst_entries[de] + (i - dst_entries[de + 4]) +
+        (j - dst_entries[de + 5]) * dst_entries[de + 1] +
+        (k - dst_entries[de + 6]) * dst_entries[de + 2] + n * dst_entries[de + 3]] =
+        src[src_entries[se] + (i - src_entries[se + 4]) +
+            (j - src_entries[se + 5]) * src_entries[se + 1] +
+            (k - src_entries[se + 6]) * src_entries[se + 2] + n * src_entries[se + 3]];
   }
 }
