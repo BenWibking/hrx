@@ -1020,3 +1020,206 @@ void cns_flux_to_dudt_xa(unsigned elements, int bs, double dxinv0, double dxinv1
       dxinv2 * (fz[at(i, j, k, n, bs, bs, b1)] -
                 fz[at(i, j, k + 1, n, bs, bs, b1)]);
 }
+
+//===----------------------------------------------------------------------===//
+// Compile-time box size (--const-shape)
+//
+// The compute_dSdt kernels with the box size and element count fixed at
+// compile time (32^3 and 64^3 boxes). They call the same inline bodies as the
+// kernels above with literal shapes, so every length, stride and index
+// decomposition folds; the physical constants stay runtime arguments. The
+// runtime bs and element arguments are accepted and ignored, so the host
+// launches them exactly as the others.
+//===----------------------------------------------------------------------===//
+
+[[loom::inline]] static void cns_ctoprim_body(unsigned e, int bs, double gamma,
+                                              double smallr, double smallp,
+                                              double cv, const double* u,
+                                              double* q) {
+  const int n = bs + 4;
+  const int i = e % n, j = (e / n) % n, k = e / (n * n);
+  const double rho = dmax(u[at(i, j, k, URHO, n, n, n)], smallr);
+  const double rhoinv = 1.0 / rho;
+  const double ux = u[at(i, j, k, UMX, n, n, n)] * rhoinv;
+  const double uy = u[at(i, j, k, UMY, n, n, n)] * rhoinv;
+  const double uz = u[at(i, j, k, UMZ, n, n, n)] * rhoinv;
+  const double kineng = 0.5 * rho * (ux * ux + uy * uy + uz * uz);
+  double ei = u[at(i, j, k, UEDEN, n, n, n)] - kineng;
+  if (ei <= 0.0) ei = u[at(i, j, k, UEINT, n, n, n)];
+  const double p = dmax((gamma - 1.0) * ei, smallp);
+  ei *= rhoinv;
+  q[at(i, j, k, QRHO, n, n, n)] = rho;
+  q[at(i, j, k, QU, n, n, n)] = ux;
+  q[at(i, j, k, QV, n, n, n)] = uy;
+  q[at(i, j, k, QW, n, n, n)] = uz;
+  q[at(i, j, k, QEINT, n, n, n)] = ei;
+  q[at(i, j, k, QPRES, n, n, n)] = p;
+  q[at(i, j, k, QCS, n, n, n)] = __builtin_sqrt(gamma * p * rhoinv);
+  q[at(i, j, k, QTEMP, n, n, n)] = ei / cv;
+}
+
+[[loom::inline]] static void cns_dudt_body(unsigned e, int bs, double dxinv0,
+                                           double dxinv1, double dxinv2,
+                                           const double* fx, const double* fy,
+                                           const double* fz, double* dudt) {
+  const int cells = bs * bs * bs;
+  const int n = e / cells;
+  const int c = e % cells;
+  const int i = c % bs, j = (c / bs) % bs, k = c / (bs * bs);
+  const int b1 = bs + 1;
+  dudt[at(i, j, k, n, bs, bs, bs)] =
+      dxinv0 * (fx[at(i, j, k, n, b1, bs, bs)] -
+                fx[at(i + 1, j, k, n, b1, bs, bs)]) +
+      dxinv1 * (fy[at(i, j, k, n, bs, b1, bs)] -
+                fy[at(i, j + 1, k, n, bs, b1, bs)]) +
+      dxinv2 * (fz[at(i, j, k, n, bs, bs, b1)] -
+                fz[at(i, j, k + 1, n, bs, bs, b1)]);
+}
+
+[[loom::kernel(configure)]]
+void cns_ctoprim_k32(unsigned elements, int bs, double gamma, double smallr,
+                    double smallp, double cv, [[loom::noalias]] const double* u,
+                    [[loom::noalias]] double* q) {
+  const unsigned e = element_index();
+  if (e >= 46656u) return;
+  cns_ctoprim_body(e, 32, gamma, smallr, smallp, cv, u, q);
+}
+
+[[loom::kernel(configure)]]
+void cns_slope_x_k32(unsigned elements, int bs,
+                     [[loom::noalias]] const double* q,
+                     [[loom::noalias]] double* dq) {
+  const unsigned e = element_index();
+  if (e < 34816u) cns_slope(0, e, 32, q, dq);
+}
+
+[[loom::kernel(configure)]]
+void cns_riemann_x_k32(unsigned elements, int bs, double gamma,
+                       double smallp, double smallr,
+                       [[loom::noalias]] const double* dq,
+                       [[loom::noalias]] const double* q,
+                       [[loom::noalias]] double* f) {
+  const unsigned e = element_index();
+  if (e < 33792u) cns_riemann(0, e, 32, gamma, smallp, smallr, dq, q, f);
+}
+
+[[loom::kernel(configure)]]
+void cns_slope_y_k32(unsigned elements, int bs,
+                     [[loom::noalias]] const double* q,
+                     [[loom::noalias]] double* dq) {
+  const unsigned e = element_index();
+  if (e < 34816u) cns_slope(1, e, 32, q, dq);
+}
+
+[[loom::kernel(configure)]]
+void cns_riemann_y_k32(unsigned elements, int bs, double gamma,
+                       double smallp, double smallr,
+                       [[loom::noalias]] const double* dq,
+                       [[loom::noalias]] const double* q,
+                       [[loom::noalias]] double* f) {
+  const unsigned e = element_index();
+  if (e < 33792u) cns_riemann(1, e, 32, gamma, smallp, smallr, dq, q, f);
+}
+
+[[loom::kernel(configure)]]
+void cns_slope_z_k32(unsigned elements, int bs,
+                     [[loom::noalias]] const double* q,
+                     [[loom::noalias]] double* dq) {
+  const unsigned e = element_index();
+  if (e < 34816u) cns_slope(2, e, 32, q, dq);
+}
+
+[[loom::kernel(configure)]]
+void cns_riemann_z_k32(unsigned elements, int bs, double gamma,
+                       double smallp, double smallr,
+                       [[loom::noalias]] const double* dq,
+                       [[loom::noalias]] const double* q,
+                       [[loom::noalias]] double* f) {
+  const unsigned e = element_index();
+  if (e < 33792u) cns_riemann(2, e, 32, gamma, smallp, smallr, dq, q, f);
+}
+
+[[loom::kernel(configure)]]
+void cns_flux_to_dudt_k32(unsigned elements, int bs, double dxinv0,
+                         double dxinv1, double dxinv2,
+                         [[loom::noalias]] const double* fx,
+                         [[loom::noalias]] const double* fy,
+                         [[loom::noalias]] const double* fz,
+                         [[loom::noalias]] double* dudt) {
+  const unsigned e = element_index();
+  if (e < 229376u) cns_dudt_body(e, 32, dxinv0, dxinv1, dxinv2, fx, fy, fz, dudt);
+}
+
+[[loom::kernel(configure)]]
+void cns_ctoprim_k64(unsigned elements, int bs, double gamma, double smallr,
+                    double smallp, double cv, [[loom::noalias]] const double* u,
+                    [[loom::noalias]] double* q) {
+  const unsigned e = element_index();
+  if (e >= 314432u) return;
+  cns_ctoprim_body(e, 64, gamma, smallr, smallp, cv, u, q);
+}
+
+[[loom::kernel(configure)]]
+void cns_slope_x_k64(unsigned elements, int bs,
+                     [[loom::noalias]] const double* q,
+                     [[loom::noalias]] double* dq) {
+  const unsigned e = element_index();
+  if (e < 270336u) cns_slope(0, e, 64, q, dq);
+}
+
+[[loom::kernel(configure)]]
+void cns_riemann_x_k64(unsigned elements, int bs, double gamma,
+                       double smallp, double smallr,
+                       [[loom::noalias]] const double* dq,
+                       [[loom::noalias]] const double* q,
+                       [[loom::noalias]] double* f) {
+  const unsigned e = element_index();
+  if (e < 266240u) cns_riemann(0, e, 64, gamma, smallp, smallr, dq, q, f);
+}
+
+[[loom::kernel(configure)]]
+void cns_slope_y_k64(unsigned elements, int bs,
+                     [[loom::noalias]] const double* q,
+                     [[loom::noalias]] double* dq) {
+  const unsigned e = element_index();
+  if (e < 270336u) cns_slope(1, e, 64, q, dq);
+}
+
+[[loom::kernel(configure)]]
+void cns_riemann_y_k64(unsigned elements, int bs, double gamma,
+                       double smallp, double smallr,
+                       [[loom::noalias]] const double* dq,
+                       [[loom::noalias]] const double* q,
+                       [[loom::noalias]] double* f) {
+  const unsigned e = element_index();
+  if (e < 266240u) cns_riemann(1, e, 64, gamma, smallp, smallr, dq, q, f);
+}
+
+[[loom::kernel(configure)]]
+void cns_slope_z_k64(unsigned elements, int bs,
+                     [[loom::noalias]] const double* q,
+                     [[loom::noalias]] double* dq) {
+  const unsigned e = element_index();
+  if (e < 270336u) cns_slope(2, e, 64, q, dq);
+}
+
+[[loom::kernel(configure)]]
+void cns_riemann_z_k64(unsigned elements, int bs, double gamma,
+                       double smallp, double smallr,
+                       [[loom::noalias]] const double* dq,
+                       [[loom::noalias]] const double* q,
+                       [[loom::noalias]] double* f) {
+  const unsigned e = element_index();
+  if (e < 266240u) cns_riemann(2, e, 64, gamma, smallp, smallr, dq, q, f);
+}
+
+[[loom::kernel(configure)]]
+void cns_flux_to_dudt_k64(unsigned elements, int bs, double dxinv0,
+                         double dxinv1, double dxinv2,
+                         [[loom::noalias]] const double* fx,
+                         [[loom::noalias]] const double* fy,
+                         [[loom::noalias]] const double* fz,
+                         [[loom::noalias]] double* dudt) {
+  const unsigned e = element_index();
+  if (e < 1835008u) cns_dudt_body(e, 64, dxinv0, dxinv1, dxinv2, fx, fy, fz, dudt);
+}
