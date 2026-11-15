@@ -233,6 +233,29 @@ With four streams or 64³ boxes, all three kernel sets run within 2–4% of each
 other, and the per-box temporaries make no difference. AMReX's kernels give
 the same totals as this example's.
 
+### Compile-time box sizes
+
+`--const-shape` bounds what specializing kernels for common box shapes could
+gain (Setonix job 53197434, 128³ cells, steps 2–20, median of three rounds):
+
+| Configuration | 32³ boxes, 1 stream | 32³ boxes, 4 streams | 64³ boxes, 1 stream | 64³ boxes, 4 streams |
+|---|---|---|---|---|
+| Device-side ordering, runtime box size | 0.302 s | 0.189 s | 0.171 s | 0.162 s |
+| Device-side ordering, `--const-shape` | 0.271 s | 0.200 s | 0.173 s | 0.165 s |
+| AMReX-like¹, runtime box size | 0.445 s | 0.280 s | 0.248 s | 0.205 s |
+| AMReX-like¹, `--const-shape` | 0.412 s | 0.287 s | 0.247 s | 0.214 s |
+| AMReX LOOM CNS | 0.499 s | 0.283 s | 0.264 s | 0.216 s |
+
+¹ `--immediate --host-sync=flush --fillpatch=amrex --fresh-temps`.
+
+Folding the box shape removes most of the vector index arithmetic (a Riemann
+kernel goes from 47–67 vector integer multiplies to 5–22, and to 70 VGPRs)
+but adds scalar work for the folded constants. With 32³ boxes on one stream,
+`compute_dSdt` becomes 14% faster (0.250 to 0.215 s over 20 steps) and the
+step 7–10% faster, about what AMReX-sized argument lists cost the same
+kernels. With four streams or 64³ boxes it is neutral to 2–4% slower. All
+configurations give the same totals.
+
 ## Notes
 
 - The constants block of `hrx_stream_dispatch` holds a kernel's scalar
