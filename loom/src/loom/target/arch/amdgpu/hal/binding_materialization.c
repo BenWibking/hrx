@@ -7,6 +7,7 @@
 #include "loom/target/arch/amdgpu/hal/binding_materialization.h"
 
 #include <inttypes.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "loom/codegen/low/builder.h"
@@ -520,6 +521,102 @@ static bool loom_amdgpu_hal_binding_layout_uses_kernarg_segment_ptr(
     }
   }
   return false;
+}
+
+// Whether materialization trims unused kernel parameters from the kernarg
+// segment (LOOM_AMDGPU_TRIM_UNUSED_KERNEL_ARGUMENTS=1). Trimming changes the
+// argument layout, so only a caller that packs arguments from the reported
+// layout (loom-cxx's generated packing functions) may enable it; a dispatch
+// path that packs bindings and constants in parameter order may not.
+static bool loom_amdgpu_hal_binding_trim_unused_arguments(void) {
+  const char* value = getenv("LOOM_AMDGPU_TRIM_UNUSED_KERNEL_ARGUMENTS");
+  return value != NULL && value[0] != '\0' && strcmp(value, "0") != 0;
+}
+
+// Marks every unused parameter of |layout| trimmed and assigns the others
+// consecutive kernarg storage in parameter order, with the alignment and
+// sizes of the authored layout. The entry arrays are copied into
+// |scratch_arena|; |layout| then refers to the copies.
+static iree_status_t loom_amdgpu_hal_binding_trim_layout(
+    const loom_module_t* module, iree_arena_allocator_t* scratch_arena,
+    loom_amdgpu_hal_kernel_abi_layout_t* layout) {
+  loom_amdgpu_hal_kernarg_resource_t* resources = NULL;
+  if (layout->resource_count != 0) {
+    IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
+        scratch_arena, layout->resource_count, sizeof(*resources),
+        (void**)&resources));
+    memcpy(resources, layout->resources,
+           layout->resource_count * sizeof(*resources));
+  }
+  loom_amdgpu_hal_kernarg_direct_arg_t* direct_args = NULL;
+  if (layout->direct_arg_count != 0) {
+    IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
+        scratch_arena, layout->direct_arg_count, sizeof(*direct_args),
+        (void**)&direct_args));
+    memcpy(direct_args, layout->direct_args,
+           layout->direct_arg_count * sizeof(*direct_args));
+  }
+  // One-based row ordinals by parameter index, direct arguments after
+  // resources, as the layout decoder numbers them.
+  uint32_t* rows = NULL;
+  if (layout->parameter_count != 0) {
+    IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
+        scratch_arena, layout->parameter_count, sizeof(*rows), (void**)&rows));
+    memset(rows, 0, layout->parameter_count * sizeof(*rows));
+  }
+  for (iree_host_size_t i = 0; i < layout->resource_count; ++i) {
+    loom_amdgpu_hal_kernarg_resource_t* resource = &resources[i];
+    resource->trimmed =
+        resource->trimmed || resource->resource_op == NULL ||
+        iree_any_bit_set(resource->resource_op->flags, LOOM_OP_FLAG_DEAD) ||
+        !loom_amdgpu_hal_binding_resource_is_used(module, resource);
+    rows[resource->parameter_index] = (uint32_t)i + 1;
+  }
+  for (iree_host_size_t i = 0; i < layout->direct_arg_count; ++i) {
+    loom_amdgpu_hal_kernarg_direct_arg_t* direct_arg = &direct_args[i];
+    direct_arg->trimmed =
+        direct_arg->trimmed ||
+        !loom_amdgpu_hal_binding_direct_arg_is_used(module, direct_arg);
+    rows[direct_arg->parameter_index] =
+        (uint32_t)(layout->resource_count + i) + 1;
+  }
+  uint64_t offset = 0, constant_count = 0;
+  for (uint32_t p = 0; p < layout->parameter_count; ++p) {
+    const uint32_t row = rows[p] - 1;
+    if (row < layout->resource_count) {
+      loom_amdgpu_hal_kernarg_resource_t* resource = &resources[row];
+      if (resource->trimmed) {
+        resource->kernarg_offset = 0;
+        continue;
+      }
+      offset = iree_align_uint64(offset, resource->kernarg_alignment);
+      resource->kernarg_offset = (uint32_t)offset;
+      offset += resource->kernarg_size;
+    } else {
+      loom_amdgpu_hal_kernarg_direct_arg_t* direct_arg =
+          &direct_args[row - layout->resource_count];
+      if (direct_arg->trimmed) {
+        direct_arg->kernarg_offset = 0;
+        continue;
+      }
+      offset = iree_align_uint64(offset, direct_arg->kernarg_alignment);
+      direct_arg->kernarg_offset = (uint32_t)offset;
+      offset += direct_arg->kernarg_size;
+      constant_count += direct_arg->kernarg_size /
+                        LOOM_AMDGPU_HAL_KERNEL_ABI_DIRECT_SCALAR_KERNARG_SIZE;
+    }
+  }
+  layout->resources = resources;
+  layout->direct_args = direct_args;
+  // Lowering already placed the hidden workgroup-count loads after the
+  // untrimmed explicit arguments, so a kernel that reads them keeps the
+  // untrimmed explicit size (the trimmed arguments leave a gap).
+  if (layout->geometry_args == 0) {
+    layout->explicit_kernarg_size = (uint32_t)iree_align_uint64(
+        offset, LOOM_AMDGPU_HAL_KERNEL_ABI_GLOBAL_BUFFER_KERNARG_ALIGNMENT);
+  }
+  layout->constant_count = (uint32_t)constant_count;
+  return iree_ok_status();
 }
 
 static bool loom_amdgpu_hal_binding_direct_arg_unit_count(
@@ -1295,6 +1392,11 @@ iree_status_t loom_amdgpu_hal_binding_materialize(
   }
 
   loom_amdgpu_hal_kernel_abi_layout_t layout = verified_abi->layout;
+  if (loom_low_kernel_def_isa(function_op) &&
+      loom_amdgpu_hal_binding_trim_unused_arguments()) {
+    IREE_RETURN_IF_ERROR(
+        loom_amdgpu_hal_binding_trim_layout(module, scratch_arena, &layout));
+  }
   layout.uses_kernarg_segment_ptr =
       kernarg_ptr != LOOM_VALUE_ID_INVALID ||
       loom_amdgpu_hal_binding_layout_uses_kernarg_segment_ptr(module, &layout);
