@@ -14,7 +14,7 @@ maintenance between dependent dispatches.
 
 ## Files
 
-- `cns.cxx`: 20 Loom C++ kernels. Fifteen are ported line by line from CNS's
+- `cns.cxx`: 28 Loom C++ kernels. Fifteen are ported line by line from CNS's
   `CNS_K.H`, `hydro/CNS_hydro_K.H` and the Sod `cns_prob.H`:
   - initial data and temperature;
   - the ghost-cell fill: neighbor boxes, periodic in y and z,
@@ -23,11 +23,15 @@ maintenance between dependent dispatches.
     and `flux_to_dudt`;
   - the two RK2 updates, and the time-step and totals reductions.
 
-  The other five port the device code of AMReX's `AmrLevel::FillPatch`, used
-  with `--fillpatch=amrex`.
+  Five port the device code of AMReX's `AmrLevel::FillPatch`, used with
+  `--fillpatch=amrex`. The other eight are the `compute_dSdt` kernels with
+  AMReX-sized argument lists, used with `--extra-args`.
 - `cns_loom.cpp`: the host driver. It loads the code object, allocates the
   state, and runs AMReX's RK2 step with one `hrx_stream_dispatch` per box per
   kernel.
+- `genspec.py`: turns the artifact manifest that `loom-cxx --loom-keep` writes
+  for AMReX's `CNS_advance.cpp` into the argument layouts `--amrex-kernels`
+  packs.
 
 The kernels use only pointer and scalar parameters. Each array is one buffer
 holding every box at computed offsets, so no pointer is ever stored in memory.
@@ -55,7 +59,8 @@ clang++ -std=c++20 -O2 -I libhrx/include loom/docs/examples/cns/cns_loom.cpp \
 ```shell
 cns_loom cns.hsaco [--n=64] [--bs=32] [--steps=20] [--streams=1]
          [--host-sync | --host-sync=flush] [--immediate] [--graph]
-         [--fillpatch=amrex] [--phase-times]
+         [--fillpatch=amrex] [--fresh-temps] [--extra-args]
+         [--amrex-kernels=<code object>,<spec>] [--phase-times]
 ```
 
 - `--n`: cells per side of the cubic domain [0, 1]³.
@@ -84,6 +89,20 @@ cns_loom cns.hsaco [--n=64] [--bs=32] [--steps=20] [--streams=1]
   empty recording whose system-scope release publishes the kernels' writes.
 - `--fillpatch=amrex`: fill ghost cells with AMReX's single-level FillPatch
   instead of one in-place kernel per box (below).
+- `--fresh-temps`: give every box its own primitive and slope temporaries,
+  as AMReX does within an `MFIter` loop (its per-box temporaries return to the
+  arena only at the loop's closing synchronization). By default each stream
+  reuses one set.
+- `--extra-args`: run the `compute_dSdt` kernels with AMReX-sized argument
+  lists. Each extra argument is loaded and folded into a test the host never
+  satisfies, so only the argument loads and their scalar work are added.
+- `--amrex-kernels=<code object>,<spec>`: launch AMReX LOOM's own
+  `compute_dSdt` kernels on this example's buffers, whose layouts match
+  AMReX's FArrayBoxes. The code object is the `device.code` that
+  `loom-cxx --loom-keep=DIR` keeps for AMReX's `Tests/GPU/CNS/Source/CNS_advance.cpp`,
+  and the spec comes from `genspec.py DIR/device.manifest.json`. Each argument
+  block is packed once per box, as AMReX LOOM's runtime would pack it, and
+  passed as direct arguments.
 - `--phase-times`: with `--host-sync`, print the wall time of each phase,
   summed over all steps.
 
@@ -177,6 +196,36 @@ example and AMReX LOOM CNS on four streams: with AMReX's FillPatch the fill
 phase takes 0.110 s over 20 steps instead of 0.019 s, and the example comes
 within 2% (32³ boxes) and 6% (64³ boxes) of AMReX LOOM. On one stream,
 AMReX's generated `compute_dSdt` kernels also run slower than this example's.
+
+### The one-stream difference
+
+With one stream and 32³ boxes, two more differences close the gap (Setonix
+jobs 53194167, 53194716 and 53195500, same setup, all with
+`--immediate --host-sync=flush --fillpatch=amrex`):
+
+| Configuration, 32³ boxes, 1 stream | Steps 2–20 | `compute_dSdt` phase |
+|---|---|---|
+| Per-stream temporaries | 0.411 s | 0.217 s |
+| `--fresh-temps` | 0.444 s | 0.251 s |
+| `--fresh-temps --extra-args` | 0.473 s | 0.284 s |
+| `--fresh-temps --amrex-kernels=...` | 0.513 s | 0.330 s |
+| AMReX LOOM CNS | 0.499 s | |
+
+- Per-box temporaries write every box's primitive and slope arrays to new
+  addresses, so their dirty lines leave L2 instead of being overwritten in
+  place.
+- AMReX's generated kernels are 29% slower in `compute_dSdt`. Their argument
+  lists are 4–8 times longer (232 bytes for a Riemann kernel against 56); the
+  extra arguments cost scalar registers and instructions but no vector
+  registers. A 32³ dispatch has about one wavefront per SIMD, so the longer
+  scalar prologue of every wavefront is not hidden. AMReX-sized argument lists
+  alone (`--extra-args`) account for 40–60% of the kernels' extra cost; the
+  rest is in AMReX's kernel code (more branches, index arithmetic, the `Parm`
+  values read through a pointer).
+
+With four streams or 64³ boxes, all three kernel sets run within 2–4% of each
+other, and the per-box temporaries make no difference. AMReX's kernels give
+the same totals as this example's.
 
 ## Notes
 
