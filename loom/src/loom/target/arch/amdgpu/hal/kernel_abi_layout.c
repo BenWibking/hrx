@@ -112,6 +112,8 @@ typedef struct loom_amdgpu_hal_kernel_abi_layout_attr_keys_t {
   loom_string_id_t direct_arg_payload_sizes;
   // Interned direct arg sizes field name.
   loom_string_id_t direct_arg_sizes;
+  // Interned direct arg trimmed flags field name.
+  loom_string_id_t direct_arg_trimmed;
   // Interned parameter count field name.
   loom_string_id_t parameter_count;
   // Interned resource count field name.
@@ -120,6 +122,8 @@ typedef struct loom_amdgpu_hal_kernel_abi_layout_attr_keys_t {
   loom_string_id_t resource_offsets;
   // Interned resource parameter indices field name.
   loom_string_id_t resource_parameter_indices;
+  // Interned resource trimmed flags field name.
+  loom_string_id_t resource_trimmed;
   // Interned uses kernarg segment ptr field name.
   loom_string_id_t uses_kernarg_segment_ptr;
 } loom_amdgpu_hal_kernel_abi_layout_attr_keys_t;
@@ -145,6 +149,8 @@ static iree_status_t loom_amdgpu_hal_kernel_abi_intern_layout_attr_keys(
   IREE_RETURN_IF_ERROR(loom_module_intern_string(
       module, IREE_SV("direct_arg_sizes"), &out_keys->direct_arg_sizes));
   IREE_RETURN_IF_ERROR(loom_module_intern_string(
+      module, IREE_SV("direct_arg_trimmed"), &out_keys->direct_arg_trimmed));
+  IREE_RETURN_IF_ERROR(loom_module_intern_string(
       module, IREE_SV("parameter_count"), &out_keys->parameter_count));
   IREE_RETURN_IF_ERROR(loom_module_intern_string(
       module, IREE_SV("resource_count"), &out_keys->resource_count));
@@ -153,6 +159,8 @@ static iree_status_t loom_amdgpu_hal_kernel_abi_intern_layout_attr_keys(
   IREE_RETURN_IF_ERROR(
       loom_module_intern_string(module, IREE_SV("resource_parameter_indices"),
                                 &out_keys->resource_parameter_indices));
+  IREE_RETURN_IF_ERROR(loom_module_intern_string(
+      module, IREE_SV("resource_trimmed"), &out_keys->resource_trimmed));
   return loom_module_intern_string(module, IREE_SV("uses_kernarg_segment_ptr"),
                                    &out_keys->uses_kernarg_segment_ptr);
 }
@@ -304,6 +312,37 @@ static iree_status_t loom_amdgpu_hal_kernel_abi_make_layout_u32_array_attr(
   return iree_ok_status();
 }
 
+static bool loom_amdgpu_hal_kernel_abi_layout_has_trimmed(
+    const loom_amdgpu_hal_kernel_abi_layout_t* layout) {
+  for (iree_host_size_t i = 0; i < layout->resource_count; ++i) {
+    if (layout->resources[i].trimmed) return true;
+  }
+  for (iree_host_size_t i = 0; i < layout->direct_arg_count; ++i) {
+    if (layout->direct_args[i].trimmed) return true;
+  }
+  return false;
+}
+
+// One 0/1 flag per resource (|resources| true) or direct argument.
+static iree_status_t loom_amdgpu_hal_kernel_abi_make_trimmed_attr(
+    const loom_amdgpu_hal_kernel_abi_layout_t* layout, bool resources,
+    iree_arena_allocator_t* scratch_arena, loom_attribute_t* out_attr) {
+  const iree_host_size_t count =
+      resources ? layout->resource_count : layout->direct_arg_count;
+  IREE_ASSERT_LE(count, (iree_host_size_t)UINT16_MAX);
+  int64_t* entries = NULL;
+  if (count != 0) {
+    IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
+        scratch_arena, count, sizeof(*entries), (void**)&entries));
+  }
+  for (iree_host_size_t i = 0; i < count; ++i) {
+    entries[i] = resources ? layout->resources[i].trimmed
+                           : layout->direct_args[i].trimmed;
+  }
+  *out_attr = loom_attr_i64_array(entries, (uint16_t)count);
+  return iree_ok_status();
+}
+
 bool loom_amdgpu_hal_kernel_abi_has_layout_attr(const loom_op_t* function_op) {
   return loom_low_kernel_def_isa(function_op) &&
          loom_low_kernel_def_has_abi_layout(function_op);
@@ -349,7 +388,19 @@ iree_status_t loom_amdgpu_hal_kernel_abi_make_layout_attr(
       LOOM_AMDGPU_HAL_KERNEL_ABI_LAYOUT_ARRAY_RESOURCE_PARAMETER_INDICES,
       scratch_arena, &resource_parameter_indices_attr));
 
-  loom_named_attr_t entries[12] = {0};
+  // Trimmed flags appear only when some parameter is trimmed, so untrimmed
+  // layouts keep their existing encoding.
+  const bool has_trimmed = loom_amdgpu_hal_kernel_abi_layout_has_trimmed(layout);
+  loom_attribute_t resource_trimmed_attr = {0};
+  loom_attribute_t direct_arg_trimmed_attr = {0};
+  if (has_trimmed) {
+    IREE_RETURN_IF_ERROR(loom_amdgpu_hal_kernel_abi_make_trimmed_attr(
+        layout, /*resources=*/true, scratch_arena, &resource_trimmed_attr));
+    IREE_RETURN_IF_ERROR(loom_amdgpu_hal_kernel_abi_make_trimmed_attr(
+        layout, /*resources=*/false, scratch_arena, &direct_arg_trimmed_attr));
+  }
+
+  loom_named_attr_t entries[14] = {0};
   iree_host_size_t entry_count = 0;
   entries[entry_count++] = (loom_named_attr_t){
       .name_id = keys.constant_count,
@@ -399,6 +450,16 @@ iree_status_t loom_amdgpu_hal_kernel_abi_make_layout_attr(
     entries[entry_count++] = (loom_named_attr_t){
         .name_id = keys.direct_arg_payload_sizes,
         .value = direct_arg_payload_sizes_attr,
+    };
+  }
+  if (has_trimmed) {
+    entries[entry_count++] = (loom_named_attr_t){
+        .name_id = keys.resource_trimmed,
+        .value = resource_trimmed_attr,
+    };
+    entries[entry_count++] = (loom_named_attr_t){
+        .name_id = keys.direct_arg_trimmed,
+        .value = direct_arg_trimmed_attr,
     };
   }
   return loom_module_make_canonical_attr_dict(
@@ -783,6 +844,16 @@ iree_status_t loom_amdgpu_hal_kernel_abi_layout_from_attr(
   const int64_t* direct_offsets = NULL;
   const int64_t* direct_sizes = NULL;
   const int64_t* payload_sizes = NULL;
+  const int64_t* resource_trimmed = NULL;
+  const int64_t* direct_trimmed = NULL;
+  if (!loom_amdgpu_hal_layout_array(&decoder, attrs,
+                                    IREE_SV("resource_trimmed"), resource_count,
+                                    true, &resource_trimmed) ||
+      !loom_amdgpu_hal_layout_array(&decoder, attrs,
+                                    IREE_SV("direct_arg_trimmed"),
+                                    direct_arg_count, true, &direct_trimmed)) {
+    return decoder.status;
+  }
   if (!loom_amdgpu_hal_layout_array(
           &decoder, attrs, IREE_SV("resource_parameter_indices"),
           resource_count, false, &resource_parameters) ||
@@ -852,10 +923,13 @@ iree_status_t loom_amdgpu_hal_kernel_abi_layout_from_attr(
             LOOM_AMDGPU_HAL_KERNEL_ABI_GLOBAL_BUFFER_KERNARG_ALIGNMENT,
         .source_type = loom_type_none(),
         .abi_type = loom_type_none(),
+        .trimmed = resource_trimmed && resource_trimmed[i] != 0,
     };
     parameter_slots[parameter_index] = i + 1;
-    segment_end =
-        iree_max(segment_end, (uint64_t)offset + resources[i].kernarg_size);
+    if (!resources[i].trimmed) {
+      segment_end =
+          iree_max(segment_end, (uint64_t)offset + resources[i].kernarg_size);
+    }
   }
   for (uint32_t i = 0; i < direct_arg_count; ++i) {
     char key[32];
@@ -920,11 +994,14 @@ iree_status_t loom_amdgpu_hal_kernel_abi_layout_from_attr(
         .kernarg_alignment =
             LOOM_AMDGPU_HAL_KERNEL_ABI_DIRECT_SCALAR_KERNARG_ALIGNMENT,
         .abi_type = loom_type_none(),
+        .trimmed = direct_trimmed && direct_trimmed[i] != 0,
     };
     parameter_slots[parameter_index] = resource_count + i + 1;
-    segment_end = iree_max(segment_end, (uint64_t)offset + size);
-    decoded_constant_count +=
-        size / LOOM_AMDGPU_HAL_KERNEL_ABI_DIRECT_SCALAR_KERNARG_SIZE;
+    if (!direct_args[i].trimmed) {
+      segment_end = iree_max(segment_end, (uint64_t)offset + size);
+      decoded_constant_count +=
+          size / LOOM_AMDGPU_HAL_KERNEL_ABI_DIRECT_SCALAR_KERNARG_SIZE;
+    }
   }
   if (decoded_constant_count != constant_count) {
     loom_amdgpu_hal_layout_reject(
@@ -936,6 +1013,11 @@ iree_status_t loom_amdgpu_hal_kernel_abi_layout_from_attr(
   for (uint32_t i = 0; i < parameter_count; ++i) {
     const uint32_t row = parameter_slots[i] - 1;
     const bool is_resource = row < resource_count;
+    // A trimmed parameter has no storage to order.
+    if (is_resource ? resources[row].trimmed
+                    : direct_args[row - resource_count].trimmed) {
+      continue;
+    }
     const uint32_t offset =
         is_resource ? resources[row].kernarg_offset
                     : direct_args[row - resource_count].kernarg_offset;
