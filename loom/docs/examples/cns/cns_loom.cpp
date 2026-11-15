@@ -11,7 +11,8 @@
 //
 // Usage: cns_loom <cns.hsaco> [--n=64] [--bs=32] [--steps=20] [--streams=1]
 //                 [--host-sync | --host-sync=flush] [--immediate] [--graph]
-//                 [--fillpatch=amrex] [--phase-times]
+//                 [--fillpatch=amrex] [--fresh-temps] [--phase-times]
+//                 [--amrex-kernels=<code object>,<spec>] [--extra-args]
 //
 // Phases of the step are ordered across streams with device-side event waits;
 // the host waits only to read the time step and the totals. --host-sync
@@ -106,6 +107,11 @@ class Constants {
     std::memcpy(bytes_.data() + offset, &value, sizeof(T));
     return *this;
   }
+  // Appends `count` zero ints in one step (--extra-args).
+  Constants& zeros(int count) {
+    bytes_.resize(bytes_.size() + count * sizeof(int), 0);
+    return *this;
+  }
   const uint8_t* data() const { return bytes_.data(); }
   size_t size() const { return bytes_.size(); }
 
@@ -132,6 +138,11 @@ struct Options {
   bool graph = false;
   bool phase_times = false;
   bool fillpatch_amrex = false;  // --fillpatch=amrex: AMReX's FillPatch
+  bool fresh_temps = false;  // --fresh-temps: per-box q and slope temporaries
+  bool extra_args = false;  // --extra-args: AMReX-sized argument lists
+  // --amrex-kernels=<code object>,<spec>: AMReX LOOM's compute_dSdt kernels.
+  const char* amrex_code_object = nullptr;
+  const char* amrex_spec = nullptr;
 };
 
 class Cns {
@@ -150,6 +161,7 @@ class Cns {
     load_kernels();
     allocate();
     if (options_.fillpatch_amrex) fp_setup();
+    if (options_.amrex_code_object) ak_setup();
     if (options_.graph) build_graphs();
   }
 
@@ -163,6 +175,7 @@ class Cns {
     }
     for (hrx_buffer_t buffer : buffers_) hrx_buffer_release(buffer);
     for (hrx_stream_t stream : streams_) hrx_stream_release(stream);
+    if (ak_executable_) hrx_executable_release(ak_executable_);
     hrx_executable_release(executable_);
     hrx_device_group_release(group_);
     hrx_runtime_release(runtime_);
@@ -257,6 +270,7 @@ class Cns {
       std::fprintf(stderr, "cns_loom: no dispatch and transfer queue family\n");
       std::exit(1);
     }
+    family_ = family;
     // One stream per provisioned queue, as AMReX's LOOM runtime does.
     for (int s = 0; s < options_.streams; ++s) {
       hrx_stream_t stream = nullptr;
@@ -295,7 +309,9 @@ class Cns {
          {&init_, &temp_, &fill_, &ctoprim_, &slope_[0], &slope_[1],
           &slope_[2], &riemann_[0], &riemann_[1], &riemann_[2], &dudt_,
           &rk1_, &rk2_, &estdt_, &sums_, &fp_setc_, &fp_tag_, &fp_bc_,
-          &fp_slab_, &fp_mfcopy_}) {
+          &fp_slab_, &fp_mfcopy_, &xa_ctoprim_, &xa_slope_[0], &xa_slope_[1],
+          &xa_slope_[2], &xa_riemann_[0], &xa_riemann_[1], &xa_riemann_[2],
+          &xa_dudt_}) {
       check(hrx_executable_lookup_export_by_name(executable_, kernel->name,
                                                  &kernel->ordinal),
             kernel->name);
@@ -330,8 +346,10 @@ class Cns {
     for (int d = 0; d < 3; ++d) flux_[d] = allocate_buffer(flux_box_ * boxes_);
     // Primitive and slope temporaries, one set per stream (AMReX resizes one
     // FArrayBox per MFIter iteration; boxes on one stream run in order). A
-    // graph may run boxes concurrently, so it gets one set per box.
-    const int temporaries = options_.graph ? boxes_ : options_.streams;
+    // graph may run boxes concurrently, so it gets one set per box, as does
+    // --fresh-temps (AMReX frees each box's temporaries only at the next sync).
+    const int temporaries =
+        options_.graph || options_.fresh_temps ? boxes_ : options_.streams;
     for (int s = 0; s < temporaries; ++s) {
       prim_.push_back(allocate_buffer(prim_box_));
       slope_tmp_.push_back(allocate_buffer(slope_box_));
@@ -492,30 +510,38 @@ class Cns {
 
   // CNS::compute_dSdt: the per-box kernel chain.
   void compute_dsdt(hrx_buffer_t state) {
+    if (options_.amrex_code_object) {
+      ak_compute_dsdt(state);
+      return;
+    }
     const int s1 = bs_ + 1;
     for (int b = 0; b < boxes_; ++b) {
       hrx_stream_t stream = stream_for(b);
-      const size_t si = b % streams_.size();
+      const size_t si = options_.fresh_temps ? b : b % streams_.size();
       const hrx_buffer_ref_t q = whole_ref(prim_[si], prim_box_);
       const hrx_buffer_ref_t dq = whole_ref(slope_tmp_[si], slope_box_);
+      const bool xa = options_.extra_args;
       const uint32_t grown2 = (bs_ + 4) * (bs_ + 4) * (bs_ + 4);
-      dispatch(stream, ctoprim_, grown2,
-               Constants() << grown2 << bs_ << kGamma << kSmallr << kSmallp
-                           << kCv,
+      dispatch(stream, xa ? xa_ctoprim_ : ctoprim_, grown2,
+               (Constants() << grown2 << bs_ << kGamma << kSmallr << kSmallp
+                            << kCv).zeros(xa ? kXaCtoprim : 0),
                {box_ref(state, state_box_, b), q});
       for (int d = 0; d < 3; ++d) {
         const uint32_t slope_cells = (bs_ + 2) * bs_ * bs_;
-        dispatch(stream, slope_[d], slope_cells,
-                 Constants() << slope_cells << bs_, {q, dq});
+        dispatch(stream, xa ? xa_slope_[d] : slope_[d], slope_cells,
+                 (Constants() << slope_cells << bs_).zeros(xa ? kXaSlope : 0),
+                 {q, dq});
         const uint32_t faces = s1 * bs_ * bs_;
-        dispatch(stream, riemann_[d], faces,
-                 Constants() << faces << bs_ << kGamma << kSmallp << kSmallr,
+        dispatch(stream, xa ? xa_riemann_[d] : riemann_[d], faces,
+                 (Constants() << faces << bs_ << kGamma << kSmallp << kSmallr)
+                     .zeros(xa ? kXaRiemann : 0),
                  {dq, q, box_ref(flux_[d], flux_box_, b)});
       }
       const uint32_t updates = bs_ * bs_ * bs_ * kNcons;
       const double dxinv = 1.0 / dx_;
-      dispatch(stream, dudt_, updates,
-               Constants() << updates << bs_ << dxinv << dxinv << dxinv,
+      dispatch(stream, xa ? xa_dudt_ : dudt_, updates,
+               (Constants() << updates << bs_ << dxinv << dxinv << dxinv)
+                   .zeros(xa ? kXaDudt : 0),
                {box_ref(flux_[0], flux_box_, b),
                 box_ref(flux_[1], flux_box_, b),
                 box_ref(flux_[2], flux_box_, b),
@@ -973,6 +999,308 @@ class Cns {
   int fp_bcr_slots_ = 0, fp_bcr_used_ = 0, fp_slab_slots_ = 0, fp_slab_used_ = 0;
   size_t fp_slab_bytes_ = 0;
 
+
+  //===--------------------------------------------------------------------===//
+  // AMReX LOOM's compute_dSdt kernels (--amrex-kernels)
+  //
+  // Loads the code object loom-cxx compiled from AMReX's CNS_advance.cpp and
+  // launches its eight compute_dSdt kernels in place of this example's, on
+  // this example's buffers, whose layouts match AMReX's FArrayBoxes. Each
+  // kernel's argument block is packed as AMReX LOOM's runtime packs it: the
+  // flattened closure leaves at the offsets of the device compile's manifest
+  // (genspec.py turns the manifest into the spec read here), with device
+  // addresses for pointer leaves, and passed as direct arguments.
+  //===--------------------------------------------------------------------===//
+
+  struct AkLeaf {
+    uint32_t offset, size;
+    std::string field;
+  };
+  struct AkKernel {
+    std::string name;
+    uint32_t ordinal = 0, bytes = 0;
+    std::vector<AkLeaf> leaves;
+  };
+  // An Array4: device address of its first element, lower corner, lengths,
+  // components.
+  struct AkFab {
+    uint64_t address;
+    int lo[3], len[3], ncomp;
+  };
+
+  uint64_t device_address(hrx_buffer_t buffer) {
+    uint64_t address = 0;
+    check(hrx_buffer_query_address(buffer, ak_scope_,
+                                   HRX_BUFFER_INTERFACE_DEVICE_ADDRESS, &address),
+          "hrx_buffer_query_address");
+    return address;
+  }
+
+  void ak_setup() {
+    check(hrx_device_query_queue_family_memory_scope(
+              device_, family_, HRX_MEMORY_SITE_PROGRAM, &ak_scope_),
+          "hrx_device_query_queue_family_memory_scope");
+    check(hrx_executable_load_file(device_, options_.amrex_code_object, "amdgpu",
+                                   "gfx90a", &ak_executable_),
+          "hrx_executable_load_file (AMReX)");
+    FILE* f = std::fopen(options_.amrex_spec, "r");
+    if (!f) {
+      std::fprintf(stderr, "cns_loom: cannot read %s\n", options_.amrex_spec);
+      std::exit(1);
+    }
+    char kind[16], role[64];
+    static char text[4096];
+    AkKernel* current = nullptr;
+    while (std::fscanf(f, "%15s", kind) == 1) {
+      if (std::strcmp(kind, "kernel") == 0) {
+        unsigned bytes = 0;
+        if (std::fscanf(f, "%63s %u %4095s", role, &bytes, text) != 3) break;
+        current = &ak_kernels_[role];
+        current->name = text;
+        current->bytes = bytes;
+        check(hrx_executable_lookup_export_by_name(ak_executable_, text,
+                                                   &current->ordinal),
+              role);
+      } else {
+        unsigned offset = 0, size = 0;
+        if (std::fscanf(f, "%u %u %4095s", &offset, &size, text) != 3 || !current) break;
+        current->leaves.push_back({offset, size, text});
+      }
+    }
+    std::fclose(f);
+    for (const char* role : {"ctoprim", "slope_x", "riemann_x", "slope_y", "riemann_y",
+                             "slope_z", "riemann_z", "flux_to_dudt"}) {
+      if (!ak_kernels_.count(role)) {
+        std::fprintf(stderr, "cns_loom: %s missing from %s\n", role, options_.amrex_spec);
+        std::exit(1);
+      }
+    }
+    // CNS's Parm, initialized as Parm::Initialize does.
+    const double ru = 8.31451e7;
+    const double parm[12] = {kGamma, kMu, ru / (kMu * (kGamma - 1.0)),
+                             kGamma * ru / (kMu * (kGamma - 1.0)), 0.72, 1.458e-5, 110.4,
+                             kSmallr, kSmallp, -1.0, -1.0, -1.0};
+    ak_parm_ = allocate_buffer(12);
+    check(hrx_stream_copy_h2d(streams_[0], parm, ak_parm_, 0, sizeof(parm)),
+          "hrx_stream_copy_h2d");
+    check(hrx_stream_synchronize(streams_[0]), "hrx_stream_synchronize");
+    std::printf("amrex kernels: %zu loaded from %s\n", ak_kernels_.size(),
+                options_.amrex_code_object);
+  }
+
+  static void put(std::vector<uint8_t>& block, const AkLeaf& leaf, uint64_t bits) {
+    if (leaf.offset + leaf.size > block.size()) {
+      std::fprintf(stderr, "cns_loom: leaf %s out of range\n", leaf.field.c_str());
+      std::exit(1);
+    }
+    std::memcpy(block.data() + leaf.offset, &bits, leaf.size);  // little endian
+  }
+
+  // Math::FastDivmodU32's constants, as its host constructor computes them.
+  static void fast_divmod(uint32_t divisor, uint32_t out[4]) {
+    uint32_t multiplier = 1, shift = 0, round_up = 0;
+    if (divisor) {
+      for (uint32_t x = divisor; x >>= 1;) ++shift;
+      if ((divisor & (divisor - 1)) == 0) {
+        multiplier = 0;
+      } else {
+        const uint64_t power = uint64_t(1) << shift;
+        uint64_t n = power << 32;
+        const uint32_t lo = uint32_t(n / divisor);
+        n += power;
+        multiplier = uint32_t(n / divisor);
+        round_up = lo == multiplier ? 1 : 0;
+      }
+    }
+    out[0] = divisor;
+    out[1] = multiplier;
+    out[2] = shift;
+    out[3] = round_up;
+  }
+
+  // One packed launch: AMReX's generated pack function only copies bytes, so
+  // the blocks are built once per box and state buffer and then reused.
+  struct AkPacked {
+    uint32_t ordinal;
+    hrx_dispatch_config_t config;
+    std::vector<uint8_t> block;
+  };
+
+  AkPacked ak_pack(const char* role, const int lo[3], const int len[3],
+                   const std::map<std::string, AkFab>& fabs) {
+    const AkKernel& k = ak_kernels_.at(role);
+    std::vector<uint8_t> block(k.bytes, 0);
+    const uint32_t npts = uint32_t(len[0]) * len[1] * len[2];
+    uint32_t fdm[2][4];
+    fast_divmod(uint32_t(len[0]), fdm[0]);
+    fast_divmod(uint32_t(len[0]) * len[1], fdm[1]);
+    const double dxinv = 1.0 / dx_;
+    for (const AkLeaf& leaf : k.leaves) {
+      const std::string& f = leaf.field;
+      auto suffix = [&](const char* prefix) -> int {
+        return std::atoi(f.c_str() + std::strlen(prefix));
+      };
+      if (f.rfind("ptr:", 0) == 0) {
+        put(block, leaf, fabs.at(f.substr(4)).address);
+      } else if (f == "tag_f_start_idx") {
+        put(block, leaf, 0);
+      } else if (f == "tag_f_indexer_npts") {
+        put(block, leaf, npts);
+      } else if (f.rfind("tag_f_indexer_fdm_", 0) == 0) {
+        const int which = f[18] - '0';
+        const std::string part = f.substr(20);
+        const int idx = part == "divisor" ? 0 : part == "multiplier" ? 1
+                      : part == "shift_right" ? 2 : 3;
+        put(block, leaf, fdm[which][idx]);
+      } else if (f.rfind("tag_f_indexer_lo_vect_", 0) == 0) {
+        put(block, leaf, uint32_t(lo[suffix("tag_f_indexer_lo_vect_")]));
+      } else if (f.rfind("tag_f_f_dxinv_arr_", 0) == 0) {
+        uint64_t bits;
+        std::memcpy(&bits, &dxinv, 8);
+        put(block, leaf, bits);
+      } else if (f == "tag_f_ncomp") {
+        put(block, leaf, uint32_t(kNcons));
+      } else if (f.rfind("tag_f_f_", 0) == 0) {
+        // tag_f_f_<fab>_<field>[_<index>]
+        const std::string rest = f.substr(8);
+        std::string fab;
+        for (const auto& [name, unused] : fabs) {
+          if (rest.rfind(name + "_", 0) == 0 && name.size() > fab.size()) fab = name;
+        }
+        if (fab.empty()) {
+          std::fprintf(stderr, "cns_loom: no fab for leaf %s\n", f.c_str());
+          std::exit(1);
+        }
+        const AkFab& a = fabs.at(fab);
+        const std::string field = rest.substr(fab.size() + 1);
+        const long plane = long(a.len[0]) * a.len[1];
+        if (field == "stride_a_0") {
+          put(block, leaf, uint32_t(a.len[0]));
+        } else if (field == "stride_a_1") {
+          put(block, leaf, uint32_t(plane));
+        } else if (field == "stride_n") {
+          put(block, leaf, uint64_t(plane * a.len[2]));
+        } else if (field.rfind("begin_vect_", 0) == 0) {
+          const int d = field[11] - '0';
+          put(block, leaf, uint32_t(d < 3 ? a.lo[d] : 0));
+        } else if (field.rfind("end_vect_", 0) == 0) {
+          const int d = field[9] - '0';
+          put(block, leaf, uint32_t(d < 3 ? a.lo[d] + a.len[d] : a.ncomp));
+        } else {
+          std::fprintf(stderr, "cns_loom: unknown leaf %s\n", f.c_str());
+          std::exit(1);
+        }
+      } else {
+        std::fprintf(stderr, "cns_loom: unknown leaf %s\n", f.c_str());
+        std::exit(1);
+      }
+    }
+    return {k.ordinal, {{(npts + 255) / 256, 1, 1}, {256, 1, 1}, 0}, std::move(block)};
+  }
+
+  void ak_submit(hrx_stream_t stream, const AkPacked& p) {
+    const hrx_dispatch_config_t& config = p.config;
+    if (options_.immediate) {
+      check(hrx_stream_flush(stream), "hrx_stream_flush");
+      hrx_timeline_point_t after{};
+      check(hrx_stream_get_timeline_position(stream, &after),
+            "hrx_stream_get_timeline_position");
+      hrx_semaphore_t timeline = nullptr;
+      check(hrx_stream_get_semaphore(stream, &timeline), "hrx_stream_get_semaphore");
+      uint64_t done = 0;
+      check(hrx_stream_advance_timeline(stream, &done), "hrx_stream_advance_timeline");
+      hrx_semaphore_t wait_semaphore = after.semaphore;
+      uint64_t wait_value = after.value;
+      const hrx_semaphore_list_t waits{&wait_semaphore, &wait_value,
+                                       after.value ? 1u : 0u};
+      const hrx_semaphore_list_t signals{&timeline, &done, 1};
+      static const hrx_barrier_list_t no_barriers{0, nullptr};
+      static const hrx_queue_barriers_t barriers{&no_barriers, &no_barriers};
+      unreleased_[stream] = true;
+      check(hrx_queue_dispatch(hrx_stream_get_queue(stream), &waits, &signals,
+                               ak_executable_, p.ordinal, &config, p.block.data(),
+                               p.block.size(), nullptr, 0, &barriers,
+                               HRX_DISPATCH_FLAG_CUSTOM_DIRECT_ARGUMENTS),
+            "hrx_queue_dispatch (AMReX kernel)");
+      return;
+    }
+    check(hrx_stream_dispatch(stream, ak_executable_, p.ordinal, &config, p.block.data(),
+                              p.block.size(), nullptr, 0,
+                              HRX_DISPATCH_FLAG_CUSTOM_DIRECT_ARGUMENTS),
+          "hrx_stream_dispatch (AMReX kernel)");
+  }
+
+  // CNS::compute_dSdt with AMReX LOOM's kernels: the same launches, boxes and
+  // order as AMReX, on this example's state, temporaries, fluxes and dSdt.
+  void ak_compute_dsdt(hrx_buffer_t state) {
+    std::vector<std::vector<AkPacked>>& packed = ak_packed_[state];
+    if (packed.empty()) ak_prepare(state, packed);
+    for (int b = 0; b < boxes_; ++b) {
+      hrx_stream_t stream = stream_for(b);
+      for (const AkPacked& p : packed[b]) ak_submit(stream, p);
+    }
+    phase_barrier("compute_dSdt");
+  }
+
+  // The eight launches of each box, packed once per state buffer.
+  void ak_prepare(hrx_buffer_t state, std::vector<std::vector<AkPacked>>& packed) {
+    packed.resize(boxes_);
+    const uint64_t state_a = device_address(state), dsdt_a = device_address(dsdt_);
+    const uint64_t parm_a = device_address(ak_parm_);
+    uint64_t flux_a[3];
+    for (int d = 0; d < 3; ++d) flux_a[d] = device_address(flux_[d]);
+    for (int b = 0; b < boxes_; ++b) {
+      const size_t si = options_.fresh_temps ? b : b % streams_.size();
+      const int bx = b % boxes_per_side_, by = (b / boxes_per_side_) % boxes_per_side_;
+      const int bz = b / (boxes_per_side_ * boxes_per_side_);
+      const int lo[3] = {bx * bs_, by * bs_, bz * bs_};
+      auto fab = [&](uint64_t address, int grow, int ncomp, int nodal) {
+        AkFab f{address, {}, {}, ncomp};
+        for (int d = 0; d < 3; ++d) {
+          f.lo[d] = lo[d] - grow;
+          f.len[d] = bs_ + 2 * grow + (d == nodal ? 1 : 0);
+        }
+        return f;
+      };
+      const std::map<std::string, AkFab> fabs = {
+          {"sfab", fab(state_a + b * state_box_ * sizeof(double), 2, kNcons, -1)},
+          {"q", fab(device_address(prim_[si]), 2, kNprim, -1)},
+          {"slope", fab(device_address(slope_tmp_[si]), 1, 5, -1)},
+          {"fxfab", fab(flux_a[0] + b * flux_box_ * sizeof(double), 0, kNcons, 0)},
+          {"fyfab", fab(flux_a[1] + b * flux_box_ * sizeof(double), 0, kNcons, 1)},
+          {"fzfab", fab(flux_a[2] + b * flux_box_ * sizeof(double), 0, kNcons, 2)},
+          {"dsdtfab", fab(dsdt_a + b * dsdt_box_ * sizeof(double), 0, kNcons, -1)},
+          {"lparm", AkFab{parm_a, {}, {}, 0}}};
+      int glo[3], glen[3];
+      for (int d = 0; d < 3; ++d) {
+        glo[d] = lo[d] - 2;
+        glen[d] = bs_ + 4;
+      }
+      packed[b].push_back(ak_pack("ctoprim", glo, glen, fabs));
+      const char* slopes[3] = {"slope_x", "slope_y", "slope_z"};
+      const char* riemanns[3] = {"riemann_x", "riemann_y", "riemann_z"};
+      for (int d = 0; d < 3; ++d) {
+        int slo[3], slen[3], flo[3], flen[3];
+        for (int e = 0; e < 3; ++e) {
+          slo[e] = lo[e] - (e == d ? 1 : 0);
+          slen[e] = bs_ + (e == d ? 2 : 0);
+          flo[e] = lo[e];
+          flen[e] = bs_ + (e == d ? 1 : 0);
+        }
+        packed[b].push_back(ak_pack(slopes[d], slo, slen, fabs));
+        packed[b].push_back(ak_pack(riemanns[d], flo, flen, fabs));
+      }
+      const int vlen[3] = {bs_, bs_, bs_};
+      packed[b].push_back(ak_pack("flux_to_dudt", lo, vlen, fabs));
+    }
+  }
+
+  hrx_executable_t ak_executable_ = nullptr;
+  hrx_memory_scope_t ak_scope_{};
+  hrx_buffer_t ak_parm_ = nullptr;
+  std::map<std::string, AkKernel> ak_kernels_;
+  std::map<hrx_buffer_t, std::vector<std::vector<AkPacked>>> ak_packed_;
+
   //===--------------------------------------------------------------------===//
   // Graph mode
   //===--------------------------------------------------------------------===//
@@ -1194,6 +1522,7 @@ class Cns {
     phase_start_ = now;
   }
   hrx_executable_t executable_ = nullptr;
+  uint32_t family_ = 0;
   Kernel init_{"cns_init"}, temp_{"cns_compute_temp"}, fill_{"cns_fill_ghosts"},
       ctoprim_{"cns_ctoprim"}, dudt_{"cns_flux_to_dudt"},
       fp_setc_{"cns_fp_set_complement"}, fp_tag_{"cns_fp_tag_copy"},
@@ -1202,6 +1531,13 @@ class Cns {
       rk1_{"cns_rk_update"}, rk2_{"cns_rk2_update_2"}, estdt_{"cns_estdt"},
       sums_{"cns_sums"};
   Kernel slope_[3] = {{"cns_slope_x"}, {"cns_slope_y"}, {"cns_slope_z"}};
+  // --extra-args: the same kernels with AMReX-sized argument lists, and the
+  // number of extra int arguments each takes.
+  Kernel xa_ctoprim_{"cns_ctoprim_xa"}, xa_dudt_{"cns_flux_to_dudt_xa"};
+  Kernel xa_slope_[3] = {{"cns_slope_x_xa"}, {"cns_slope_y_xa"}, {"cns_slope_z_xa"}};
+  Kernel xa_riemann_[3] = {
+      {"cns_riemann_x_xa"}, {"cns_riemann_y_xa"}, {"cns_riemann_z_xa"}};
+  static constexpr int kXaCtoprim = 30, kXaSlope = 36, kXaRiemann = 44, kXaDudt = 62;
   Kernel riemann_[3] = {
       {"cns_riemann_x"}, {"cns_riemann_y"}, {"cns_riemann_z"}};
   size_t state_box_ = 0, dsdt_box_ = 0, flux_box_ = 0, prim_box_ = 0,
@@ -1239,6 +1575,21 @@ int main(int argc, char** argv) {
     } else if (std::strcmp(arg, "--host-sync=flush") == 0) {
       options.host_sync = true;
       options.flush_first = true;
+    } else if (std::strncmp(arg, "--amrex-kernels=", 16) == 0) {
+      static std::string value;
+      value = arg + 16;
+      const size_t comma = value.find(',');
+      if (comma == std::string::npos) {
+        std::fprintf(stderr, "cns_loom: --amrex-kernels=<code object>,<spec>\n");
+        return 2;
+      }
+      value[comma] = '\0';
+      options.amrex_code_object = value.c_str();
+      options.amrex_spec = value.c_str() + comma + 1;
+    } else if (std::strcmp(arg, "--extra-args") == 0) {
+      options.extra_args = true;
+    } else if (std::strcmp(arg, "--fresh-temps") == 0) {
+      options.fresh_temps = true;
     } else if (std::strcmp(arg, "--fillpatch=amrex") == 0) {
       options.fillpatch_amrex = true;
     } else if (std::strcmp(arg, "--phase-times") == 0) {
@@ -1258,7 +1609,8 @@ int main(int argc, char** argv) {
     std::fprintf(stderr,
                  "usage: cns_loom <cns.hsaco> [--n=64] [--bs=32] [--steps=20] "
                  "[--streams=1] [--host-sync | --host-sync=flush] [--immediate] "
-                 "[--graph] [--fillpatch=amrex] [--phase-times]\n");
+                 "[--graph] [--fillpatch=amrex] [--fresh-temps] [--phase-times] "
+                 "[--amrex-kernels=<code object>,<spec>] [--extra-args]\n");
     return 2;
   }
   Cns cns(options);
