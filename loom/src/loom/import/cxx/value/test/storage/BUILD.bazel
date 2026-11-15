@@ -40,6 +40,7 @@ loom_check_test_suite(
         "pointers.cxx-test",
         "restrict_access.cxx-test",
         "restrict_access_invalid.cxx-test",
+        "restrict_fields.cxx-test",
         "storage_composition.cxx-test",
         "storage_updates.cxx-test",
         "volatile.cxx-test",

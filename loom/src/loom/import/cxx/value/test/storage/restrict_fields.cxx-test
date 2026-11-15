@@ -1,0 +1,44 @@
+// RUN: pass canonicalize,cse,dce
+// A restrict-qualified field imports as an ordinary pointer member, in a
+// record parameter and in a local copy of one, with no access scope.
+struct RestrictedField {
+  int* __restrict__ pointer;
+  long stride;
+};
+
+int field_pointer(RestrictedField value) {
+  return value.pointer[0];
+}
+
+int strided(RestrictedField value, long i) {
+  RestrictedField copy = value;
+  copy.pointer[i * copy.stride] = 1;
+  return value.pointer[0];
+}
+// ----
+func.def public @field_pointer(%value_pointer: buffer, %value_pointer_byte_offset: offset, %value_stride: i64) -> (i32) {
+  %8 = index.cast %value_pointer_byte_offset : offset to i64
+  %10 = scalar.assume %8 [range(%8, 0, 9223372036854775807)] : i64
+  %11 = index.cast %10 : i64 to offset
+  %12 = buffer.view %value_pointer[%11] : buffer -> view<1xi32>
+  %13 = view.load<root_in_bounds|type_disjoint> %12[0] : view<1xi32> -> i32
+  func.return %13 : i32
+}
+
+func.def public @strided(%value_pointer: buffer, %value_pointer_byte_offset: offset, %value_stride: i64, %i: i64) -> (i32) {
+  %19 = scalar.constant 1 : i32
+  %20 = scalar.muli %i, %value_stride : i64
+  %38 = scalar.constant 2 : i64
+  %39 = scalar.shli %20, %38 : i64
+  %23 = index.cast %value_pointer_byte_offset : offset to i64
+  %24 = scalar.addi %23, %39 : i64
+  %25 = scalar.assume %24 [range(%24, 0, 9223372036854775807)] : i64
+  %26 = index.cast %25 : i64 to offset
+  %27 = buffer.view %value_pointer[%26] : buffer -> view<1xi32>
+  view.store<root_in_bounds|type_disjoint> %19, %27[0] : i32, view<1xi32>
+  %34 = scalar.assume %23 [range(%23, 0, 9223372036854775807)] : i64
+  %35 = index.cast %34 : i64 to offset
+  %36 = buffer.view %value_pointer[%35] : buffer -> view<1xi32>
+  %37 = view.load<root_in_bounds|type_disjoint> %36[0] : view<1xi32> -> i32
+  func.return %37 : i32
+}

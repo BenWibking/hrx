@@ -1376,11 +1376,10 @@ const RecordPartition* Types::record(const cxx::Type* input, cxx::AST* owner) {
   auto append = [&](cxx::Symbol* symbol) {
     auto* type = source_object_type(symbol);
     auto* field = cxx::symbol_cast<cxx::FieldSymbol>(symbol);
-    if (field && traits.is_restrict(type)) {
-      diagnostics_.reject(
-          unit_, owner,
-          "restrict-qualified fields require an object-member access scope");
-    }
+    // A restrict-qualified field imports as an unrestricted member: dropping
+    // the no-alias promise is always sound, and fields have no access scope
+    // that could carry it (record kernel parameters such as AMReX's Array4
+    // store `T* AMREX_RESTRICT p`).
     const bool snapshot = field && traits.is_lvalue_reference(type) &&
                           reference_is_snapshot(field);
     const Partition* member_partition = nullptr;
