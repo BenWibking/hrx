@@ -14,7 +14,7 @@ maintenance between dependent dispatches.
 
 ## Files
 
-- `cns.cxx`: 28 Loom C++ kernels. Fifteen are ported line by line from CNS's
+- `cns.cxx`: 44 Loom C++ kernels. Fifteen are ported line by line from CNS's
   `CNS_K.H`, `hydro/CNS_hydro_K.H` and the Sod `cns_prob.H`:
   - initial data and temperature;
   - the ghost-cell fill: neighbor boxes, periodic in y and z,
@@ -24,8 +24,9 @@ maintenance between dependent dispatches.
   - the two RK2 updates, and the time-step and totals reductions.
 
   Five port the device code of AMReX's `AmrLevel::FillPatch`, used with
-  `--fillpatch=amrex`. The other eight are the `compute_dSdt` kernels with
-  AMReX-sized argument lists, used with `--extra-args`.
+  `--fillpatch=amrex`. Eight are the `compute_dSdt` kernels with AMReX-sized
+  argument lists, used with `--extra-args`, and sixteen are the same kernels
+  compiled for 32³ and 64³ boxes, used with `--const-shape`.
 - `cns_loom.cpp`: the host driver. It loads the code object, allocates the
   state, and runs AMReX's RK2 step with one `hrx_stream_dispatch` per box per
   kernel.
@@ -60,7 +61,8 @@ clang++ -std=c++20 -O2 -I libhrx/include loom/docs/examples/cns/cns_loom.cpp \
 cns_loom cns.hsaco [--n=64] [--bs=32] [--steps=20] [--streams=1]
          [--host-sync | --host-sync=flush] [--immediate] [--graph]
          [--fillpatch=amrex] [--fresh-temps] [--extra-args]
-         [--amrex-kernels=<code object>,<spec>] [--phase-times]
+         [--amrex-kernels=<code object>,<spec>] [--const-shape]
+         [--phase-times]
 ```
 
 - `--n`: cells per side of the cubic domain [0, 1]³.
@@ -103,6 +105,10 @@ cns_loom cns.hsaco [--n=64] [--bs=32] [--steps=20] [--streams=1]
   and the spec comes from `genspec.py DIR/device.manifest.json`. Each argument
   block is packed once per box, as AMReX LOOM's runtime would pack it, and
   passed as direct arguments.
+- `--const-shape`: run the `compute_dSdt` kernels compiled with the box size
+  as a compile-time constant (`--bs` must be 32 or 64). They share the inline
+  bodies of the runtime-size kernels, so every length, stride and index
+  decomposition folds; the physical constants stay runtime arguments.
 - `--phase-times`: with `--host-sync`, print the wall time of each phase,
   summed over all steps.
 
