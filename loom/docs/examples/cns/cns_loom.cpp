@@ -13,6 +13,7 @@
 //                 [--host-sync | --host-sync=flush] [--immediate] [--graph]
 //                 [--fillpatch=amrex] [--fresh-temps] [--phase-times]
 //                 [--amrex-kernels=<code object>,<spec>] [--extra-args]
+//                 [--const-shape]
 //
 // Phases of the step are ordered across streams with device-side event waits;
 // the host waits only to read the time step and the totals. --host-sync
@@ -140,6 +141,7 @@ struct Options {
   bool fillpatch_amrex = false;  // --fillpatch=amrex: AMReX's FillPatch
   bool fresh_temps = false;  // --fresh-temps: per-box q and slope temporaries
   bool extra_args = false;  // --extra-args: AMReX-sized argument lists
+  bool const_shape = false;  // --const-shape: compile-time box size
   // --amrex-kernels=<code object>,<spec>: AMReX LOOM's compute_dSdt kernels.
   const char* amrex_code_object = nullptr;
   const char* amrex_spec = nullptr;
@@ -311,7 +313,11 @@ class Cns {
           &rk1_, &rk2_, &estdt_, &sums_, &fp_setc_, &fp_tag_, &fp_bc_,
           &fp_slab_, &fp_mfcopy_, &xa_ctoprim_, &xa_slope_[0], &xa_slope_[1],
           &xa_slope_[2], &xa_riemann_[0], &xa_riemann_[1], &xa_riemann_[2],
-          &xa_dudt_}) {
+          &xa_dudt_, &k_ctoprim_[0], &k_ctoprim_[1], &k_dudt_[0], &k_dudt_[1],
+          &k_slope_[0][0], &k_slope_[0][1], &k_slope_[0][2], &k_slope_[1][0],
+          &k_slope_[1][1], &k_slope_[1][2], &k_riemann_[0][0], &k_riemann_[0][1],
+          &k_riemann_[0][2], &k_riemann_[1][0], &k_riemann_[1][1],
+          &k_riemann_[1][2]}) {
       check(hrx_executable_lookup_export_by_name(executable_, kernel->name,
                                                  &kernel->ordinal),
             kernel->name);
@@ -521,25 +527,33 @@ class Cns {
       const hrx_buffer_ref_t q = whole_ref(prim_[si], prim_box_);
       const hrx_buffer_ref_t dq = whole_ref(slope_tmp_[si], slope_box_);
       const bool xa = options_.extra_args;
+      const bool ks = options_.const_shape;
+      const int kv = bs_ == 64 ? 1 : 0;
+      if (ks && bs_ != 32 && bs_ != 64) {
+        std::fprintf(stderr, "cns_loom: --const-shape needs --bs=32 or 64\n");
+        std::exit(2);
+      }
       const uint32_t grown2 = (bs_ + 4) * (bs_ + 4) * (bs_ + 4);
-      dispatch(stream, xa ? xa_ctoprim_ : ctoprim_, grown2,
+      dispatch(stream, ks ? k_ctoprim_[kv] : xa ? xa_ctoprim_ : ctoprim_, grown2,
                (Constants() << grown2 << bs_ << kGamma << kSmallr << kSmallp
                             << kCv).zeros(xa ? kXaCtoprim : 0),
                {box_ref(state, state_box_, b), q});
       for (int d = 0; d < 3; ++d) {
         const uint32_t slope_cells = (bs_ + 2) * bs_ * bs_;
-        dispatch(stream, xa ? xa_slope_[d] : slope_[d], slope_cells,
+        dispatch(stream, ks ? k_slope_[kv][d] : xa ? xa_slope_[d] : slope_[d],
+                 slope_cells,
                  (Constants() << slope_cells << bs_).zeros(xa ? kXaSlope : 0),
                  {q, dq});
         const uint32_t faces = s1 * bs_ * bs_;
-        dispatch(stream, xa ? xa_riemann_[d] : riemann_[d], faces,
+        dispatch(stream,
+                 ks ? k_riemann_[kv][d] : xa ? xa_riemann_[d] : riemann_[d], faces,
                  (Constants() << faces << bs_ << kGamma << kSmallp << kSmallr)
                      .zeros(xa ? kXaRiemann : 0),
                  {dq, q, box_ref(flux_[d], flux_box_, b)});
       }
       const uint32_t updates = bs_ * bs_ * bs_ * kNcons;
       const double dxinv = 1.0 / dx_;
-      dispatch(stream, xa ? xa_dudt_ : dudt_, updates,
+      dispatch(stream, ks ? k_dudt_[kv] : xa ? xa_dudt_ : dudt_, updates,
                (Constants() << updates << bs_ << dxinv << dxinv << dxinv)
                    .zeros(xa ? kXaDudt : 0),
                {box_ref(flux_[0], flux_box_, b),
@@ -1538,6 +1552,16 @@ class Cns {
   Kernel xa_riemann_[3] = {
       {"cns_riemann_x_xa"}, {"cns_riemann_y_xa"}, {"cns_riemann_z_xa"}};
   static constexpr int kXaCtoprim = 30, kXaSlope = 36, kXaRiemann = 44, kXaDudt = 62;
+  // --const-shape: the same kernels compiled for 32^3 ([0]) and 64^3 ([1])
+  // boxes.
+  Kernel k_ctoprim_[2] = {{"cns_ctoprim_k32"}, {"cns_ctoprim_k64"}};
+  Kernel k_dudt_[2] = {{"cns_flux_to_dudt_k32"}, {"cns_flux_to_dudt_k64"}};
+  Kernel k_slope_[2][3] = {
+      {{"cns_slope_x_k32"}, {"cns_slope_y_k32"}, {"cns_slope_z_k32"}},
+      {{"cns_slope_x_k64"}, {"cns_slope_y_k64"}, {"cns_slope_z_k64"}}};
+  Kernel k_riemann_[2][3] = {
+      {{"cns_riemann_x_k32"}, {"cns_riemann_y_k32"}, {"cns_riemann_z_k32"}},
+      {{"cns_riemann_x_k64"}, {"cns_riemann_y_k64"}, {"cns_riemann_z_k64"}}};
   Kernel riemann_[3] = {
       {"cns_riemann_x"}, {"cns_riemann_y"}, {"cns_riemann_z"}};
   size_t state_box_ = 0, dsdt_box_ = 0, flux_box_ = 0, prim_box_ = 0,
@@ -1586,6 +1610,8 @@ int main(int argc, char** argv) {
       value[comma] = '\0';
       options.amrex_code_object = value.c_str();
       options.amrex_spec = value.c_str() + comma + 1;
+    } else if (std::strcmp(arg, "--const-shape") == 0) {
+      options.const_shape = true;
     } else if (std::strcmp(arg, "--extra-args") == 0) {
       options.extra_args = true;
     } else if (std::strcmp(arg, "--fresh-temps") == 0) {
@@ -1610,7 +1636,8 @@ int main(int argc, char** argv) {
                  "usage: cns_loom <cns.hsaco> [--n=64] [--bs=32] [--steps=20] "
                  "[--streams=1] [--host-sync | --host-sync=flush] [--immediate] "
                  "[--graph] [--fillpatch=amrex] [--fresh-temps] [--phase-times] "
-                 "[--amrex-kernels=<code object>,<spec>] [--extra-args]\n");
+                 "[--amrex-kernels=<code object>,<spec>] [--extra-args] "
+                 "[--const-shape]\n");
     return 2;
   }
   Cns cns(options);
