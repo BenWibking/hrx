@@ -180,13 +180,13 @@ template <loom::memory_space Space, __SIZE_TYPE__ Alignment = 1,
 // cannot weaken T's natural alignment.
 template <class T, loom::memory_space Space,
           __SIZE_TYPE__ Alignment = alignof(T)>
-[[loom::op("buffer.alloca")]] T* alloca(__SIZE_TYPE__ element_count);
+[[loom::op("buffer.alloca")]] T* (alloca)(__SIZE_TYPE__ element_count);
 
 // Retains a native logical element count without exposing its target-selected
 // carrier through source code.
 template <class T, loom::memory_space Space,
           __SIZE_TYPE__ Alignment = alignof(T)>
-[[loom::op("buffer.alloca")]] T* alloca(loom::type::index element_count);
+[[loom::op("buffer.alloca")]] T* (alloca)(loom::type::index element_count);
 
 // Allocates an exact physical byte extent. This form preserves a byte count
 // already computed in Loom's offset domain instead of reinterpreting it as a

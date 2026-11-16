@@ -1,0 +1,42 @@
+// RUN: roundtrip
+// glibc's <alloca.h> (reached through <stdlib.h> in hosted single-source
+// builds) defines alloca as a one-argument function-like macro. The loomcxx
+// allocation declarations must not be rewritten by it.
+#define alloca(size) __builtin_alloca(size)
+#include <loomcxx/buffer.h>
+#include <loomcxx/index.h>
+#include <loomcxx/view.h>
+
+unsigned exchange(__SIZE_TYPE__ count, __SIZE_TYPE__ write_index,
+                  __SIZE_TYPE__ read_index, unsigned value) {
+  auto* values =
+      loom::buffer::alloca<unsigned, loom::memory_space::private_>(count);
+  values[write_index] = value;
+  return values[read_index];
+}
+
+// ----
+func.def public @exchange(%count: i64, %write_index: i64, %read_index: i64, %value: i32) -> (i32) {
+  %5 = index.cast %count : i64 to index
+  %6 = index.constant 4 : offset
+  %7 = index.scale %5, %6 : index, offset -> offset
+  %values = buffer.alloca<private> align(4) %7 : buffer
+  %values_byte_offset = index.constant 0 : offset
+  %10 = scalar.constant 4 : i64
+  %11 = scalar.muli %write_index, %10 : i64
+  %12 = index.cast %values_byte_offset : offset to i64
+  %13 = scalar.addi %12, %11 : i64
+  %14 = scalar.assume %13 [range(%13, 0, 9223372036854775807)] : i64
+  %15 = index.cast %14 : i64 to offset
+  %16 = buffer.view %values[%15] : buffer -> view<1xi32>
+  view.store<root_in_bounds|type_disjoint> %value, %16[0] : i32, view<1xi32>
+  %17 = scalar.constant 4 : i64
+  %18 = scalar.muli %read_index, %17 : i64
+  %19 = index.cast %values_byte_offset : offset to i64
+  %20 = scalar.addi %19, %18 : i64
+  %21 = scalar.assume %20 [range(%20, 0, 9223372036854775807)] : i64
+  %22 = index.cast %21 : i64 to offset
+  %23 = buffer.view %values[%22] : buffer -> view<1xi32>
+  %24 = view.load<root_in_bounds|type_disjoint> %23[0] : view<1xi32> -> i32
+  func.return %24 : i32
+}
