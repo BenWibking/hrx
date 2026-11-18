@@ -110,12 +110,26 @@ static iree_status_t loom_target_pipeline_build_run_with_string_option(
       loom_make_named_attr_slice(&option_attr, 1), &run_op);
 }
 
+// Fork-only, temporary: the ordinary inlining budget for target pipelines.
+// With the default (128), a small helper with many call sites in a module, such
+// as AMReX's amrex::get<0>(GpuTuple const&), stays a native call, and a record
+// allocated per loop iteration that is passed to it fails TARGET/092
+// (ROCm/hrx-system#3378). Remove once that issue is fixed.
+#define LOOM_TARGET_PIPELINE_INLINE_BUDGET 1024
+
 static iree_status_t loom_target_pipeline_build_inline_callables(
     loom_builder_t* builder, iree_string_view_t stage) {
-  loom_named_attr_t option_attrs[2] = {0};
+  loom_named_attr_t option_attrs[3] = {0};
   IREE_RETURN_IF_ERROR(loom_target_pipeline_build_string_attr(
       builder, IREE_SV("policy"), IREE_SV("target"), &option_attrs[0]));
-  iree_host_size_t option_count = 1;
+  loom_string_id_t budget_name_id = LOOM_STRING_ID_INVALID;
+  IREE_RETURN_IF_ERROR(loom_module_intern_string(
+      builder->module, IREE_SV("budget"), &budget_name_id));
+  option_attrs[1] = (loom_named_attr_t){
+      .name_id = budget_name_id,
+      .value = loom_attr_i64(LOOM_TARGET_PIPELINE_INLINE_BUDGET),
+  };
+  iree_host_size_t option_count = 2;
   if (!iree_string_view_is_empty(stage)) {
     IREE_RETURN_IF_ERROR(loom_target_pipeline_build_string_attr(
         builder, IREE_SV("stage"), stage, &option_attrs[option_count++]));
