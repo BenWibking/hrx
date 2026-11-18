@@ -14,7 +14,7 @@ CHECK: sanitizer-materialize-assertions
 CHECK: where target(codegen = "low_native", family = "amdgpu") {
 CHECK: cfg-converge
 CHECK: source-to-low
-CHECK: inline-callables(policy = "target")
+CHECK: inline-callables(budget = 1024, policy = "target")
 CHECK: for func {
 CHECK: where target {
 CHECK: cfg-simplify
