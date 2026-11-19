@@ -146,6 +146,13 @@ host synchronizations:
    memory, then one fused kernel runs over all boxes, followed by a stream
    synchronization.
 
+Host-to-device copies are submitted as AMReX Loom submits them: with
+`--immediate`, each is one `hrx_queue_copy` chained on the stream's timeline
+with no barriers, from the pinned allocation that holds the source, or for a
+pageable source from a per-stream pinned staging buffer it is first copied
+into (`hrx_stream_copy_h2d` would make HRX wait on the host for earlier work
+before each copy); without `--immediate`, `hrx_stream_copy_h2d`.
+
 An `MFIter` loop synchronizes the current stream before it starts and each
 stream it used at the end, one at a time. Arena allocations become
 preallocated slots that are reused only after a host synchronization. Over a
