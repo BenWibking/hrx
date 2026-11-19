@@ -451,6 +451,7 @@ class Cns {
     for (hrx_stream_t stream : streams_) {
       check(hrx_stream_synchronize(stream, HRX_WAIT_FLAG_NONE), "hrx_stream_synchronize");
     }
+    for (auto& [stream, staging] : staging_) staging.used = 0;
   }
 
   // Orders the next phase after all work of this phase on every stream. AMReX
@@ -661,7 +662,15 @@ class Cns {
   struct Pinned {
     hrx_buffer_t buffer = nullptr;
     uint8_t* host = nullptr;
+    size_t size = 0;
   };
+  // Pinned staging for pageable host-to-device copies under --immediate, one
+  // per stream; reused after the stream's next host synchronization.
+  struct Staging {
+    Pinned pinned;
+    size_t used = 0;
+  };
+  static constexpr size_t kStagingBytes = size_t(1) << 20;
 
   static constexpr int kTagInts = 24, kEntInts = 14, kBoxInts = 8;
   static constexpr int kWarp = 64, kBlock = 256;
@@ -702,6 +711,7 @@ class Cns {
                          0, bytes, &host),
           "hrx_buffer_map");
     p.host = static_cast<uint8_t*>(host);
+    p.size = bytes;
     pinned_.push_back(p);
     return p;
   }
@@ -710,6 +720,7 @@ class Cns {
   void amrex_sync(hrx_stream_t stream) {
     flush_all();
     check(hrx_stream_synchronize(stream, HRX_WAIT_FLAG_NONE), "hrx_stream_synchronize");
+    staging_[stream].used = 0;
   }
   // MFIter: with several streams, sync the current stream before the loop;
   // Finalize syncs each stream the loop used, one at a time.
@@ -720,10 +731,59 @@ class Cns {
     const int used = std::min<int>(boxes_, static_cast<int>(streams_.size()));
     for (int s = 0; s < used; ++s) amrex_sync(streams_[s]);
   }
-  // amrex_loom::memcpy_async from pinned host memory.
+  // amrex_loom::memcpy_async to device memory. Under --immediate, as AMReX
+  // Loom submits it: one hrx_queue_copy_linear chained on the stream's timeline with
+  // no barriers, from the pinned allocation holding |host|, or for a pageable
+  // source from a per-stream pinned staging buffer it is copied into first.
+  // hrx_stream_copy_h2d_linear would make HRX wait on the host for earlier work.
+  // Otherwise hrx_stream_copy_h2d_linear, as AMReX Loom's batched submission does.
   void copy_h2d(hrx_stream_t stream, const void* host, hrx_buffer_t dst,
                 size_t offset, size_t bytes) {
-    check(hrx_stream_copy_h2d_linear(stream, host, dst, offset, bytes), "hrx_stream_copy_h2d_linear");
+    if (!options_.immediate) {
+      check(hrx_stream_copy_h2d_linear(stream, host, dst, offset, bytes), "hrx_stream_copy_h2d_linear");
+      return;
+    }
+    const auto* address = static_cast<const uint8_t*>(host);
+    const Pinned* source = nullptr;
+    size_t source_offset = 0;
+    for (const Pinned& p : pinned_) {
+      if (address >= p.host && address + bytes <= p.host + p.size) {
+        source = &p;
+        source_offset = size_t(address - p.host);
+        break;
+      }
+    }
+    if (!source) {
+      Staging& staging = staging_[stream];
+      if (!staging.pinned.buffer) staging.pinned = allocate_pinned(kStagingBytes);
+      size_t at = (staging.used + 255) & ~size_t(255);
+      if (at + bytes > kStagingBytes) {
+        amrex_sync(stream);
+        at = 0;
+      }
+      std::memcpy(staging.pinned.host + at, host, bytes);
+      staging.used = at + bytes;
+      source = &staging.pinned;
+      source_offset = at;
+    }
+    check(hrx_stream_flush(stream), "hrx_stream_flush");
+    hrx_timeline_point_t after{};
+    check(hrx_stream_get_timeline_position(stream, &after),
+          "hrx_stream_get_timeline_position");
+    hrx_semaphore_t timeline = nullptr;
+    check(hrx_stream_get_semaphore(stream, &timeline), "hrx_stream_get_semaphore");
+    uint64_t done = 0;
+    check(hrx_stream_advance_timeline(stream, &done), "hrx_stream_advance_timeline");
+    hrx_semaphore_t wait_semaphore = after.semaphore;
+    uint64_t wait_value = after.value;
+    const hrx_semaphore_list_t waits{&wait_semaphore, &wait_value, after.value ? 1u : 0u};
+    const hrx_semaphore_list_t signals{&timeline, &done, 1};
+    static const hrx_barrier_list_t no_barriers{0, nullptr};
+    static const hrx_queue_barriers_t barriers{&no_barriers, &no_barriers};
+    unreleased_[stream] = true;
+    check(hrx_queue_copy_linear(hrx_stream_get_queue(stream), &waits, &signals, source->buffer,
+                         source_offset, dst, offset, bytes, &barriers),
+          "hrx_queue_copy_linear");
   }
 
   void fp_setup() {
@@ -1006,6 +1066,7 @@ class Cns {
                fp_src_a4_dev_ = nullptr;
   Pinned fp_tags_pin_, fp_bcr_pin_, fp_src_a4_pin_;
   std::vector<Pinned> pinned_;
+  std::map<hrx_stream_t, Staging> staging_;
   std::vector<int> fp_tags_, fp_entries_;
   std::vector<uint8_t> fp_tag_staging_;
   int fp_ntags_ = 0, fp_ntotwarps_ = 0, fp_nblocks_per_box_ = 0;
